@@ -555,12 +555,20 @@ class LambdaService(yolo.services.BaseService):
                     fn_versions.append(int(version_num))
             return marker
 
-        # Get the first page:
-        marker = _fetch_fn_version_page()
+        try:
+            # Get the first page:
+            marker = _fetch_fn_version_page()
 
-        # Fetch any additional pages (if applicable):
-        while marker is not None:
-            marker = _fetch_fn_version_page(marker=marker)
+            # Fetch any additional pages (if applicable):
+            while marker is not None:
+                marker = _fetch_fn_version_page(marker=marker)
+        except botocore.exceptions.ClientError as exc:
+            if '(ResourceNotFoundException)' in str(exc):
+                print('No existing versions found for {}.'.format(
+                    lambda_fn_name))
+            else:
+                raise exc
+
         return fn_versions
 
     def _copy_ssm_parameters(self, service, stage, deploy_version):
