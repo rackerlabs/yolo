@@ -278,6 +278,7 @@ def deploy_s3(yolo_file=None, **kwargs):
 
 @cli.command()
 @stage_option(required=True)
+@yolo_file_option()
 @handle_yolo_errors
 def shell(yolo_file=None, **kwargs):
     """Launch a Python shell with AWS credentials."""
