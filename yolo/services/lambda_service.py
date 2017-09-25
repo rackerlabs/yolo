@@ -556,7 +556,15 @@ class LambdaService(yolo.services.BaseService):
             return marker
 
         # Get the first page:
-        marker = _fetch_fn_version_page()
+        try:
+            marker = _fetch_fn_version_page()
+        except botocore.exceptions.ClientError as exc:
+            if 'ResourceNotFoundException' in str(exc):
+                # This means the Lambda function doesn't exist, so we can
+                # safely return an empty list for available versions.
+                return []
+            else:
+                raise
 
         # Fetch any additional pages (if applicable):
         while marker is not None:
