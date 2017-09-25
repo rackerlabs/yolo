@@ -174,8 +174,12 @@ class LambdaService(yolo.services.BaseService):
         )
         # With the newly uploaded lambda function version, create an alias for
         # the function using the supplied stage for the alias name.
+        # NOTE(szilveszter): We have to use the Yoke-specific stage, if
+        # available, because that's the stage we're putting the base path
+        # mapping in place for.
+        yoke_stage = service_cfg['yoke'].get('stage', stage)
         self._create_lambda_alias_for_stage(
-            lambda_fn_cfg['FunctionName'], fn_version, stage
+            lambda_fn_cfg['FunctionName'], fn_version, yoke_stage
         )
 
         # Once the lambda deployment is done, finish wiring it up to API
@@ -281,8 +285,12 @@ class LambdaService(yolo.services.BaseService):
         )
         # With the newly uploaded lambda function version, create an alias for
         # the function using the supplied stage for the alias name.
+        # NOTE(szilveszter): We have to use the Yoke-specific stage, if
+        # available, because that's the stage we're putting the base path
+        # mapping in place for.
+        yoke_stage = service_cfg['yoke'].get('stage', stage)
         self._create_lambda_alias_for_stage(
-            lambda_fn_cfg['FunctionName'], fn_version, stage
+            lambda_fn_cfg['FunctionName'], fn_version, yoke_stage
         )
 
         # Once the lambda deployment is done, finish wiring it up to API
@@ -780,7 +788,7 @@ class LambdaService(yolo.services.BaseService):
         # available, because that's the stage we're putting the base path
         # mapping in place for.
         yoke_stage = service_cfg['yoke'].get('stage', stage)
-        print('Deploying API to stage "{}"...'.format(stage))
+        print('Deploying API to stage "{}"...'.format(yoke_stage))
         apig_client.create_deployment(
             restApiId=rest_api_id,
             stageName=yoke_stage,
