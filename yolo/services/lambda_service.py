@@ -776,10 +776,14 @@ class LambdaService(yolo.services.BaseService):
             )
 
         # Deploy the API to the target stage:
+        # NOTE(szilveszter): We have to use the Yoke-specific stage, if
+        # available, because that's the stage we're putting the base path
+        # mapping in place for.
+        yoke_stage = service_cfg['yoke'].get('stage', stage)
         print('Deploying API to stage "{}"...'.format(stage))
         apig_client.create_deployment(
             restApiId=rest_api_id,
-            stageName=stage,
+            stageName=yoke_stage,
         )
 
         print('Configuring API Gateway/Lambda base path mapping...')
