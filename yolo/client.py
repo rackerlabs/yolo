@@ -84,20 +84,45 @@ class YoloClient(object):
         self._yolo_file = None
         self._faws_client = None
 
-        self.rax_username = (
-            os.getenv(const.RACKSPACE_USERNAME) or
-            keyring.get_password(const.NAMESPACE, 'rackspace_username')
-        )
-        self.rax_api_key = (
-            os.getenv(const.RACKSPACE_API_KEY) or
-            keyring.get_password(const.NAMESPACE, 'rackspace_api_key')
-        )
+        # Credentials for accessing FAWS accounts:
+        self._rax_username = None
+        self._rax_api_key = None
 
         self._version_hash = None
 
         # This will get populated when the ``yolo_file`` is read and the basic
         # account/stage information (including stack outputs) is read.
         self._context = None
+
+    @property
+    def rax_username(self):
+        if self._rax_username is None:
+            self._rax_username = (
+                os.getenv(const.RACKSPACE_USERNAME) or
+                keyring.get_password(const.NAMESPACE, 'rackspace_username')
+            )
+            if self._rax_username is None:
+                # Couldn't find credentials in keyring or environment:
+                raise YoloError(
+                    'Missing credentials: Run `yolo login` or set the '
+                    'environment variable "{}"'.format(const.RACKSPACE_USERNAME)
+                )
+        return self._rax_username
+
+    @property
+    def rax_api_key(self):
+        if self._rax_api_key is None:
+            self._rax_api_key = (
+                os.getenv(const.RACKSPACE_API_KEY) or
+                keyring.get_password(const.NAMESPACE, 'rackspace_api_key')
+            )
+            if self._rax_api_key is None:
+                # Couldn't find credentials in keyring or environment:
+                raise YoloError(
+                    'Missing credentials: Run `yolo login` or set the '
+                    'environment variable "{}"'.format(const.RACKSPACE_API_KEY)
+                )
+        return self._rax_api_key
 
     @property
     def context(self):
@@ -628,14 +653,8 @@ class YoloClient(object):
         # prompt for them interactively.
         # The envvar approach works scripted commands, while the interactive
         # mode is preferred for executing on the command line (by a human).
-        self.rax_username = (
-            os.getenv(const.RACKSPACE_USERNAME) or
-            get_username()
-        )
-        self.rax_api_key = (
-            os.getenv(const.RACKSPACE_API_KEY) or
-            get_api_key(self.rax_username)
-        )
+        self._rax_username = get_username()
+        self._rax_api_key = get_api_key(self.rax_username)
 
         # TODO(larsbutler): perform login against the rackspace identity api
 

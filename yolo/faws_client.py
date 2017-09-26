@@ -1,6 +1,9 @@
 import boto3
 import requests
 
+from yolo import const
+import yolo.exceptions
+
 
 RAX_IDENTITY_ENDPOINT = 'https://identity.api.rackspacecloud.com'
 
@@ -74,11 +77,23 @@ class FAWSClient(object):
 
     @property
     def request_headers(self):
-        return {
-            'X-Tenant-Id': self.x_tenant_id,
-            'X-Auth-Token': self.x_auth_token,
-            'Content-Type': 'application/json',
-        }
+        try:
+            return {
+                'X-Tenant-Id': self.x_tenant_id,
+                'X-Auth-Token': self.x_auth_token,
+                'Content-Type': 'application/json',
+            }
+        except requests.exceptions.HTTPError as err:
+            if err.response.status_code == 401:
+                # Bad credentials; raise a nice error message.
+                raise yolo.exceptions.YoloError(
+                    'Invalid credentials: Run `yolo login` or check your '
+                    '"{}" and "{}" environment variables.'.format(
+                        const.RACKSPACE_USERNAME, const.RACKSPACE_API_KEY
+                    )
+                )
+            else:
+                raise
 
     def _get(self, path):
         response = requests.get(
