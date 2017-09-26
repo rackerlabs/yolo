@@ -4,6 +4,8 @@ import time
 
 from botocore.exceptions import ClientError
 
+import yolo.exceptions
+
 
 class VerboseCloudFormationWaiter(object):
     """Custom waiter that prints on progress to standard outpout.
@@ -71,5 +73,8 @@ class VerboseCloudFormationWaiter(object):
             else:
                 # This means we have reached an unexpected state, let's raise
                 # an exception.
-                raise RuntimeError(
-                    'The stack reached an unexpected state: {}'.format(stack_status))
+                raise yolo.exceptions.CloudFormationError(
+                    'The stack reached an unexpected state: {}'.format(
+                        stack_status
+                    )
+                )

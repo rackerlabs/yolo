@@ -34,6 +34,7 @@ except ImportError:
 
 from yolo.cloudformation import CloudFormation
 from yolo import const
+import yolo.exceptions
 from yolo.exceptions import NoInfrastructureError
 from yolo.exceptions import StackDoesNotExist
 from yolo.exceptions import YoloError
@@ -815,11 +816,15 @@ class YoloClient(object):
             for k, v in templates_cfg['params'].items()
         ]
 
-        self._create_or_update_stack(
-            cf_client, stack_name, master_url, stack_params, tags,
-            dry_run=dry_run, recreate=recreate, asynchronous=asynchronous,
-            force=force,
-        )
+        try:
+            self._create_or_update_stack(
+                cf_client, stack_name, master_url, stack_params, tags,
+                dry_run=dry_run, recreate=recreate, asynchronous=asynchronous,
+                force=force,
+            )
+        except yolo.exceptions.CloudFormationError as err:
+            # Re-raise it as a friendly error message:
+            raise YoloError(str(err))
 
     def deploy_baseline_infra(self, account, dry_run=False,
                               asynchronous=False):

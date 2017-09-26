@@ -1,5 +1,5 @@
 class YoloError(Exception):
-    pass
+    """Errors meant to be displayed to the user in a friendly way."""
 
 
 class NoInfrastructureError(YoloError):
@@ -12,3 +12,7 @@ class StackDoesNotExist(Exception):
 
 class ResourceNotFound(Exception):
     pass
+
+
+class CloudFormationError(Exception):
+    """Errors related to CloudFormation resource management."""
