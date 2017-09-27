@@ -810,7 +810,11 @@ class YoloClient(object):
             cf_file_full_path = os.path.join(full_templates_dir, cf_file)
             bucket_key = '{}/{}'.format(bucket_folder_prefix, cf_file)
             print('uploading s3://{}/{}...'.format(bucket.name, bucket_key))
-            bucket.upload_file(Filename=cf_file_full_path, Key=bucket_key)
+            bucket.upload_file(
+                Filename=cf_file_full_path,
+                Key=bucket_key,
+                ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
+            )
 
         cf_client = self.faws_client.boto3_session(acct_num).client(
             'cloudformation',

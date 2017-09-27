@@ -134,10 +134,7 @@ class LambdaService(yolo.services.BaseService):
             Filename=lambda_fn_path,
             Key=os.path.join(bucket_folder_prefix, 'lambda_function.zip'),
             Callback=utils.S3UploadProgress(lambda_fn_path),
-            ExtraArgs={
-                'ACL': 'private',
-                'ServerSideEncryption': 'AES256',
-            },
+            ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
         )
         # if apig, upload service.working_dir + 'swagger.yml' to 'swagger.yaml'
         if service_cfg['type'] == (
@@ -151,6 +148,7 @@ class LambdaService(yolo.services.BaseService):
             bucket.upload_file(
                 Filename=swagger_yaml_path,
                 Key=os.path.join(bucket_folder_prefix, const.SWAGGER_YAML),
+                ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
             )
 
         bucket.upload_fileobj(
@@ -159,6 +157,7 @@ class LambdaService(yolo.services.BaseService):
             # system. This allows for later deployments to just pick the file
             # up (or ignore it explicitly) by convention.
             Key=os.path.join(bucket_folder_prefix, const.YOLO_YAML),
+            ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
         )
 
     def deploy_local_version(self, service, stage):

@@ -124,6 +124,7 @@ class S3Service(yolo.services.BaseService):
             # system. This allows for later deployments to just pick the file
             # up (or ignore it explicitly) by convention.
             Key=os.path.join(bucket_folder_prefix, const.YOLO_YAML),
+            ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
         )
 
         # TODO(larsbutler): check output and errors from the sp call
