@@ -134,6 +134,10 @@ class LambdaService(yolo.services.BaseService):
             Filename=lambda_fn_path,
             Key=os.path.join(bucket_folder_prefix, 'lambda_function.zip'),
             Callback=utils.S3UploadProgress(lambda_fn_path),
+            ExtraArgs={
+                'ACL': 'private',
+                'ServerSideEncryption': 'AES256',
+            },
         )
         # if apig, upload service.working_dir + 'swagger.yml' to 'swagger.yaml'
         if service_cfg['type'] == (
