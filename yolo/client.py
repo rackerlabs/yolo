@@ -721,39 +721,82 @@ class YoloClient(object):
 
         if stage is not None:
             # Deploy stage-level templates
-            region = self.context.stage.region
-            bucket_folder_prefix = (
-                const.BUCKET_FOLDER_PREFIXES['stage-templates'].format(
-                    stage=self.context.stage.name, timestamp=self.now_timestamp
-                )
-            )
-            templates_cfg = self.yolo_file.templates['stage']
-            tags = [const.YOLO_STACK_TAGS['created-with-yolo-version']]
-            # TODO(larsbutler): Add `protected` attribute to the
-            # ``self.context.stage`` so that we don't have to fetch stage
-            # config to get it.
-            stage_cfg = self.yolo_file.get_stage_config(stage)
-            if stage_cfg.get('protected', False):
-                tags.append(const.YOLO_STACK_TAGS['protected'])
-            stack_name = self.get_stage_stack_name(
-                self.context.account.account_number,
-                self.context.stage.name,
+            self._deploy_stage_stack(
+                dry_run=dry_run,
+                asynchronous=asynchronous,
+                recreate=recreate,
             )
         else:
             # Deploy account-level templates:
-            region = self.yolo_file.templates['account']['region']
-            bucket_folder_prefix = (
-                const.BUCKET_FOLDER_PREFIXES['account-templates'].format(
-                    timestamp=self.now_timestamp
-                )
+            self._deploy_account_stack(
+                dry_run=dry_run,
+                asynchronous=asynchronous,
             )
-            templates_cfg = self.yolo_file.templates['account']
-            tags = [
-                const.YOLO_STACK_TAGS['created-with-yolo-version'],
-                # Always protect account-level infra stacks:
-                const.YOLO_STACK_TAGS['protected'],
-            ]
-            stack_name = self.account_stack_name
+
+    def _deploy_stage_stack(self, dry_run=False, asynchronous=False,
+                            recreate=False):
+        region = self.context.stage.region
+        bucket_folder_prefix = (
+            const.BUCKET_FOLDER_PREFIXES['stage-templates'].format(
+                stage=self.context.stage.name, timestamp=self.now_timestamp
+            )
+        )
+        templates_cfg = self.yolo_file.templates['stage']
+
+        stack_name = self.get_stage_stack_name(
+            self.context.account.account_number,
+            self.context.stage.name,
+        )
+
+        # TODO(larsbutler): Add `protected` attribute to the
+        # ``self.context.stage`` so that we don't have to fetch stage
+        # config to get it.
+        protected = False
+        stage_cfg = self.yolo_file.get_stage_config(self.context.stage.name)
+        if stage_cfg.get('protected', False):
+            protected = True
+
+        self._deploy_stack(
+            stack_name,
+            templates_cfg,
+            bucket_folder_prefix,
+            self.context.account.account_number,
+            region,
+            dry_run=dry_run,
+            asynchronous=asynchronous,
+            recreate=recreate,
+            protected=protected,
+        )
+
+    def _deploy_account_stack(self, dry_run=False,
+                              asynchronous=False):
+        region = self.yolo_file.templates['account']['region']
+        bucket_folder_prefix = (
+            const.BUCKET_FOLDER_PREFIXES['account-templates'].format(
+                timestamp=self.now_timestamp
+            )
+        )
+        templates_cfg = self.yolo_file.templates['account']
+        stack_name = self.account_stack_name
+
+        self._deploy_stack(
+            stack_name,
+            templates_cfg,
+            bucket_folder_prefix,
+            self.context.account.account_number,
+            region,
+            dry_run=dry_run,
+            asynchronous=asynchronous,
+            # Always protect account-level infra stacks:
+            protected=True,
+        )
+
+    def _deploy_stack(self, stack_name, templates_cfg, bucket_folder_prefix,
+                      acct_num, region, dry_run=False, asynchronous=False,
+                      recreate=False):
+        tags = [const.YOLO_STACK_TAGS['created-with-yolo-version']]
+        if protected:
+            tags.append(const.YOLO_STACK_TAGS['protected'])
 
         bucket = self._ensure_bucket(
             self.context.account.account_number,
@@ -761,24 +804,6 @@ class YoloClient(object):
             self.app_bucket_name,
         )
 
-        self._deploy_stack(
-            stack_name,
-            templates_cfg,
-            bucket_folder_prefix,
-            bucket,
-            self.context.account.account_number,
-            region,
-            tags,
-            dry_run=dry_run,
-            asynchronous=asynchronous,
-            recreate=recreate,
-            force=force,
-        )
-
-    def _deploy_stack(self, stack_name, templates_cfg, bucket_folder_prefix,
-                      bucket, acct_num, region, tags,
-                      dry_run=False, asynchronous=False, recreate=False,
-                      force=False):
         if os.path.isabs(templates_cfg['path']):
             full_templates_dir = templates_cfg['path']
         else:
