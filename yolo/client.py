@@ -405,6 +405,21 @@ class YoloClient(object):
         return stgs_accts_regions
 
     def _ensure_bucket(self, acct_num, region, bucket_name):
+        """Make sure an S3 bucket exists in the specified account/region.
+
+        If it doesn't exist, create it.
+
+        :param str acct_num:
+            AWS account number.
+        :param str region:
+            AWS region in which to create the bucket (e.g., us-east-1,
+            eu-west-1, etc.).
+        :param str bucket_name:
+            Name of the target bucket.
+
+        :returns:
+            :class:`boto3.resources.factory.s3.Bucket` instance.
+        """
         s3_client = self.faws_client.boto3_session(acct_num).client(
             's3', region_name=region
         )
@@ -436,6 +451,46 @@ class YoloClient(object):
                                 stack_params, tags, asynchronous=False,
                                 dry_run=False, protected=False,
                                 recreate=False):
+        """Create a new or update an existing stack.
+
+        :param cf_client:
+            :class:`botocore.client.CloudFormation` instance.
+        :param str stack_name:
+            Unique name of the stack to create or update.
+        :param str master_url:
+            URL location (in S3) of the "master" CloudFormation template to use
+            for creating/updating a stack.
+        :param list stack_params:
+            (Optional.) A list of parameters to pass to the CloudFormation API
+            call. Each list item is a dict which must contain the keys
+            ``ParameterKey`` and ``ParameterValue``.
+
+            Alternatively, you can specify ``UsePreviousValue`` instead of
+            ``ParameterValue``. This only applies to stack updates, not
+            creation.
+        :param list tags:
+            A list of tags apply to the CloudFormation stack. Each
+            list item is a dict containing the keys ``Key`` and ``Value``.
+        :param bool asynchronous:
+            Stack creates/updates may take a while to complete, sometimes more
+            than 40 minutes depending on the change. Set this to ``true`` to
+            return as soon as possible and let CloudFormation handle the
+            change. By default ``asynchronous`` is set to ``false``, which
+            means that we block and wait for the stack create/update to finish
+            before returning.
+        :param bool dry_run:
+            Set to ``true`` to perform a dry run and show the proposed changes
+            without actually applying them.
+        :param bool protected:
+            If ``true``, make sure that stack termination protection is enabled
+            (whether it is a new or existing stack). Note that setting this to
+            ``false`` will not disable protection; that must be done manually.
+        :param bool recreate:
+            This only applies to stack updates.
+
+            If ``true``, tear down and re-create the stack from scratch.
+            Otherwise, just try to update the existing stack.
+        """
         if dry_run:
             # Dry run only makes sense for updates, not creates.
             self._update_stack_dry_run(
@@ -608,6 +663,10 @@ class YoloClient(object):
                                    stack_params, tags, recreate=False,
                                    asynchronous=False,
                                    protected=False):
+        """Actually perform the stack create/update.
+
+        For parameter info, see :meth:`_create_or_update_stack`.
+        """
         cf = CloudFormation(cf_client)
         stack_exists, stack_details = cf.stack_exists(stack_name)
 
@@ -735,7 +794,33 @@ class YoloClient(object):
 
     def deploy_infra(self, stage=None, account=None, dry_run=False,
                      asynchronous=False, recreate=False):
-        """Deploy infrastructure for an account or stage."""
+        """Deploy infrastructure for an account or stage.
+
+        :param str stage:
+            name of the stage for which to create/update infrastructure.
+
+            You can specify either ``stage`` or ``account``, but not both.
+        :param str account:
+            Name or number of the account for which to create/update
+            infrastructure.
+
+            You can specify either ``stage`` or ``account``, but not both.
+        :param bool asynchronous:
+            Stack creates/updates may take a while to complete, sometimes more
+            than 40 minutes depending on the change. Set this to ``true`` to
+            return as soon as possible and let CloudFormation handle the
+            change. By default ``asynchronous`` is set to ``false``, which
+            means that we block and wait for the stack create/update to finish
+            before returning.
+        :param bool dry_run:
+            Set to ``true`` to perform a dry run and show the proposed changes
+            without actually applying them.
+        :param bool recreate:
+            This only applies to stack updates.
+
+            If ``true``, tear down and re-create the stack from scratch.
+            Otherwise, just try to update the existing stack.
+        """
         with_stage = stage is not None
         with_account = account is not None
 
@@ -773,6 +858,24 @@ class YoloClient(object):
 
     def _deploy_stage_stack(self, dry_run=False, asynchronous=False,
                             recreate=False):
+        """Deploy stage-level infrastructure for the current context.
+
+        :param bool dry_run:
+            Set to ``true`` to perform a dry run and show the proposed changes
+            without actually applying them.
+        :param bool asynchronous:
+            Stack creates/updates may take a while to complete, sometimes more
+            than 40 minutes depending on the change. Set this to ``true`` to
+            return as soon as possible and let CloudFormation handle the
+            change. By default ``asynchronous`` is set to ``false``, which
+            means that we block and wait for the stack create/update to finish
+            before returning.
+        :param bool recreate:
+            This only applies to stack updates.
+
+            If ``true``, tear down and re-create the stack from scratch.
+            Otherwise, just try to update the existing stack.
+        """
         region = self.context.stage.region
         bucket_folder_prefix = (
             const.BUCKET_FOLDER_PREFIXES['stage-templates'].format(
@@ -808,6 +911,19 @@ class YoloClient(object):
 
     def _deploy_account_stack(self, dry_run=False,
                               asynchronous=False):
+        """Deploy account-level infrastructure for the current context.
+
+        :param bool dry_run:
+            Set to ``true`` to perform a dry run and show the proposed changes
+            without actually applying them.
+        :param bool asynchronous:
+            Stack creates/updates may take a while to complete, sometimes more
+            than 40 minutes depending on the change. Set this to ``true`` to
+            return as soon as possible and let CloudFormation handle the
+            change. By default ``asynchronous`` is set to ``false``, which
+            means that we block and wait for the stack create/update to finish
+            before returning.
+        """
         region = self.yolo_file.templates['account']['region']
         bucket_folder_prefix = (
             const.BUCKET_FOLDER_PREFIXES['account-templates'].format(
@@ -832,6 +948,43 @@ class YoloClient(object):
     def _deploy_stack(self, stack_name, templates_path, templates_params,
                       bucket_folder_prefix, region, asynchronous=False,
                       dry_run=False, protected=False, recreate=False):
+        """Deploy the specified template to a new or existing stack.
+
+        :param str stack_name:
+            Unique name of the stack to create or update.
+        :param str templates_path:
+            File system directory location from which to get CloudFormation
+            templates for this deployment.
+        :param dict templates_params:
+            Dict of key/value pairs to input as parameters to the
+            CloudFormation stack deployment.
+        :param str bucket_folder_prefix:
+            Location in the yolo S3 bucket to store CloudFormation templates.
+            Template files will be copied from the local file system to this
+            location.
+        :param str region:
+            AWS region in which to create the bucket (e.g., us-east-1,
+            eu-west-1, etc.).
+        :param bool asynchronous:
+            Stack creates/updates may take a while to complete, sometimes more
+            than 40 minutes depending on the change. Set this to ``true`` to
+            return as soon as possible and let CloudFormation handle the
+            change. By default ``asynchronous`` is set to ``false``, which
+            means that we block and wait for the stack create/update to finish
+            before returning.
+        :param bool dry_run:
+            Set to ``true`` to perform a dry run and show the proposed changes
+            without actually applying them.
+        :param bool protected:
+            If ``true``, make sure that stack termination protection is enabled
+            (whether it is a new or existing stack). Note that setting this to
+            ``false`` will not disable protection; that must be done manually.
+        :param bool recreate:
+            This only applies to stack updates.
+
+            If ``true``, tear down and re-create the stack from scratch.
+            Otherwise, just try to update the existing stack.
+        """
         tags = [const.YOLO_STACK_TAGS['created-with-yolo-version']]
         if protected:
             tags.append(const.YOLO_STACK_TAGS['protected'])
