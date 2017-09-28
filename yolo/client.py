@@ -433,9 +433,9 @@ class YoloClient(object):
         return bucket
 
     def _create_or_update_stack(self, cf_client, stack_name, master_url,
-                                stack_params, tags, recreate=False,
-                                dry_run=False, asynchronous=False,
-                                force=False):
+                                stack_params, tags, asynchronous=False,
+                                dry_run=False, protected=False,
+                                recreate=False):
         if dry_run:
             # Dry run only makes sense for updates, not creates.
             self._update_stack_dry_run(
@@ -444,7 +444,8 @@ class YoloClient(object):
         else:
             self._do_create_or_update_stack(
                 cf_client, stack_name, master_url, stack_params, tags,
-                recreate=recreate, asynchronous=asynchronous, force=force,
+                recreate=recreate, asynchronous=asynchronous,
+                protected=protected,
             )
 
     def _update_stack_dry_run(self, cf_client, stack_name,
@@ -606,7 +607,7 @@ class YoloClient(object):
     def _do_create_or_update_stack(self, cf_client, stack_name, master_url,
                                    stack_params, tags, recreate=False,
                                    asynchronous=False,
-                                   force=False):
+                                   protected=False):
         cf = CloudFormation(cf_client)
         stack_exists, stack_details = cf.stack_exists(stack_name)
 
@@ -615,36 +616,73 @@ class YoloClient(object):
             if not stack_exists:
                 cf.create_stack(
                     stack_name, master_url, stack_params, tags,
-                    asynchronous=asynchronous
+                    asynchronous=asynchronous, protected=protected,
                 )
             elif stack_exists and recreate:
                 # This assignment asserts that there is only one stack in the
                 # list. This should always be the case. If not, something has
                 # gone wrong.
-                [the_stack] = stack_details['Stacks']
-                if const.YOLO_STACK_TAGS['protected'] in the_stack['Tags']:
-                    # The stack is protected.
-                    if not force:
-                        # We can't touch this stack.
-                        raise YoloError(
-                            'Unable to re-create stack: Stack is protected and'
-                            ' probably for a good reason. Use --force (with '
-                            'caution) to override.'
-                        )
 
-                cf.recreate_stack(
-                    stack_name, master_url, stack_params, tags,
-                    stack_details, asynchronous=asynchronous
-                )
+                # Before recreating the stack, we need to check if it's
+                # protected. There are two ways to protect a stack:
+                # 1. Add a `yolo:Protected` tag to the stack. Yolo will set
+                # this tag automatically for `protected` stacks to "true"
+                # (technically it just needs to be set to any value, according
+                # to the logic below).
+                # 2. Use the new CF termination protection feature:
+                # http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-protect-stacks.html.
+                #
+                # The second approach is preferred, so if a stack is protected
+                # with the first (older) approach, apply termination protection
+                # just as an added layer of security.
+                [the_stack] = stack_details['Stacks']
+                is_protected = False
+                if the_stack.get('EnableTerminationProtection', False):
+                    LOG.info('Stack "%s" is protected by CloudFormation.',
+                             stack_name)
+                    # The stack is protected using the new approach (CF
+                    # termination protection).
+                    is_protected = True
+                elif const.YOLO_STACK_TAGS['protected'] in the_stack['Tags']:
+                    LOG.info('Stack "%s" is protected by Yolo.', stack_name)
+                    is_protected = True
+                    # Since we bothered to look, enable hard termination
+                    # protection while we're here:
+                    LOG.info('Adding CloudFormation termination protection to '
+                             'stack "%s"...', stack_name)
+                    cf_client.update_termination_protection(
+                        EnableTerminationProtection=True,
+                        StackName=stack_name,
+                    )
+
+                if is_protected:
+                    # We can't touch this stack.
+                    raise YoloError(
+                        'Unable to re-create stack "{}": Stack is protected '
+                        'and probably for a good reason.'.format(stack_name)
+                    )
+                else:
+                    # Go ahead and recreate it.
+                    cf.recreate_stack(
+                        stack_name, master_url, stack_params, tags,
+                        stack_details, asynchronous=asynchronous,
+                        protected=is_protected,
+                    )
             elif stack_exists and not recreate:
                 cf.update_stack(
                     stack_name, master_url, stack_params,
-                    asynchronous=asynchronous
+                    asynchronous=asynchronous, protected=protected,
                 )
         except botocore.exceptions.ClientError as err:
             if 'No updates are to be performed' in str(err):
                 # Nothing changed
                 print('No changes to apply to stack.')
+            elif 'TerminationProtection is enabled' in str(err):
+                raise YoloError(
+                    'Stack "{}" is protected; deletion is not allowed.'.format(
+                        stack_name
+                    )
+                )
             elif 'ValidationError' in str(err):
                 # TODO(szilveszter): We can actually figure out the
                 # actual issue, skipping that for now.
@@ -696,7 +734,7 @@ class YoloClient(object):
         print(tabulate.tabulate(table, headers='firstrow'))
 
     def deploy_infra(self, stage=None, account=None, dry_run=False,
-                     asynchronous=False, recreate=False, force=False):
+                     asynchronous=False, recreate=False):
         """Deploy infrastructure for an account or stage."""
         with_stage = stage is not None
         with_account = account is not None
@@ -758,9 +796,9 @@ class YoloClient(object):
 
         self._deploy_stack(
             stack_name,
-            templates_cfg,
+            templates_cfg['path'],
+            templates_cfg['params'],
             bucket_folder_prefix,
-            self.context.account.account_number,
             region,
             dry_run=dry_run,
             asynchronous=asynchronous,
@@ -781,9 +819,9 @@ class YoloClient(object):
 
         self._deploy_stack(
             stack_name,
-            templates_cfg,
+            templates_cfg['path'],
+            templates_cfg['params'],
             bucket_folder_prefix,
-            self.context.account.account_number,
             region,
             dry_run=dry_run,
             asynchronous=asynchronous,
@@ -791,9 +829,9 @@ class YoloClient(object):
             protected=True,
         )
 
-    def _deploy_stack(self, stack_name, templates_cfg, bucket_folder_prefix,
-                      acct_num, region, dry_run=False, asynchronous=False,
-                      recreate=False):
+    def _deploy_stack(self, stack_name, templates_path, templates_params,
+                      bucket_folder_prefix, region, asynchronous=False,
+                      dry_run=False, protected=False, recreate=False):
         tags = [const.YOLO_STACK_TAGS['created-with-yolo-version']]
         if protected:
             tags.append(const.YOLO_STACK_TAGS['protected'])
@@ -804,13 +842,13 @@ class YoloClient(object):
             self.app_bucket_name,
         )
 
-        if os.path.isabs(templates_cfg['path']):
-            full_templates_dir = templates_cfg['path']
+        if os.path.isabs(templates_path):
+            full_templates_dir = templates_path
         else:
             # Template dir is relative to the location of the yolo.yaml file.
             working_dir = os.path.dirname(self._yolo_file_path)
             full_templates_dir = os.path.join(
-                working_dir, templates_cfg['path']
+                working_dir, templates_path
             )
 
         files = os.listdir(full_templates_dir)
@@ -841,7 +879,9 @@ class YoloClient(object):
                 ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
             )
 
-        cf_client = self.faws_client.boto3_session(acct_num).client(
+        cf_client = self.faws_client.boto3_session(
+            self.context.account.account_number
+        ).client(
             'cloudformation',
             region_name=region,
         )
@@ -856,14 +896,14 @@ class YoloClient(object):
         )
         stack_params = [
             dict(ParameterKey=k, ParameterValue=v)
-            for k, v in templates_cfg['params'].items()
+            for k, v in templates_params.items()
         ]
 
         try:
             self._create_or_update_stack(
                 cf_client, stack_name, master_url, stack_params, tags,
                 dry_run=dry_run, recreate=recreate, asynchronous=asynchronous,
-                force=force,
+                protected=protected,
             )
         except yolo.exceptions.CloudFormationError as err:
             # Re-raise it as a friendly error message:

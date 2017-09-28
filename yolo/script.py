@@ -190,15 +190,6 @@ def list_accounts():
         'Not allowed on account-level stacks.'
     ),
 )
-@click.option(
-    '--force',
-    is_flag=True,
-    default=False,
-    help=(
-        'DANGER ZONE: Use this flag to force stack re-creation on protected '
-        'stages.'
-    ),
-)
 @handle_yolo_errors
 def deploy_infra(yolo_file=None, **kwargs):
     """Deploy infrastructure from templates."""
@@ -474,15 +465,6 @@ def list_lambda_builds(yolo_file=None, **kwargs):
     help=(
         'DANGER ZONE: Tear down and re-deploy infrastructure from scratch. '
         'Not allowed on account-level stacks.'
-    ),
-)
-@click.option(
-    '--force',
-    is_flag=True,
-    default=False,
-    help=(
-        'DANGER ZONE: Use this flag to force stack re-creation on protected '
-        'stages.'
     ),
 )
 @handle_yolo_errors

@@ -42,15 +42,18 @@ class CloudFormation(object):
             return True, details
 
     def create_stack(self, stack_name, master_url, stack_params,
-                     tags, asynchronous=False):
+                     tags, asynchronous=False, protected=False):
         # Create stack
-        result = self._cf.create_stack(
+        create_stack_params = dict(
             StackName=stack_name,
             Parameters=stack_params,
             TemplateURL=master_url,
             Capabilities=[self.CF_CAPABILITY_IAM, self.CF_CAPABILITY_NAMED_IAM],
             Tags=tags,
         )
+        if protected:
+            create_stack_params['EnableTerminationProtection'] = True
+        result = self._cf.create_stack(**create_stack_params)
         print('creating stack "{}"...'.format(result['StackId']))
         if not asynchronous:
             create_waiter = VerboseCloudFormationWaiter(self._cf, 'stack_create_complete')
@@ -58,7 +61,14 @@ class CloudFormation(object):
             print('stack "{}" created.'.format(stack_name))
 
     def update_stack(self, stack_name, master_url, stack_params,
-                     asynchronous=False):
+                     asynchronous=False, protected=False):
+        if protected:
+            # Add termination protection before anything:
+            self._cf.update_termination_protection(
+                EnableTerminationProtection=True,
+                StackName=stack_name,
+            )
+
         # Update the stack
         result = self._cf.update_stack(
             StackName=stack_name,
@@ -73,7 +83,8 @@ class CloudFormation(object):
             print('stack "{}" updated.'.format(stack_name))
 
     def recreate_stack(self, stack_name, master_url, stack_params,
-                       tags, stack_details, asynchronous=False):
+                       tags, stack_details, asynchronous=False,
+                       protected=False):
         # Stack already exists. Delete it and recreate it.
         print('recreating stack "{}"...'.format(stack_name))
         print('deleting stack "{}"... (this may take a while)'.format(
@@ -84,7 +95,7 @@ class CloudFormation(object):
         delete_waiter.wait(StackName=stack_name)
         print('stack "{}" has been deleted'.format(stack_name))
         self.create_stack(stack_name, master_url, stack_params,
-                          tags, asynchronous=asynchronous)
+                          tags, asynchronous=asynchronous, protected=protected)
 
     def create_change_set(self, stack_name, master_url, stack_params, tags):
         # change set name needs to be unique
