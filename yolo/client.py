@@ -844,42 +844,6 @@ class YoloClient(object):
             # Re-raise it as a friendly error message:
             raise YoloError(str(err))
 
-    def deploy_baseline_infra(self, account, dry_run=False,
-                              asynchronous=False):
-        """Deploy baseline infrastructure for a given account."""
-        self.set_up_yolofile_context(account=account)
-        self._yolo_file = self.yolo_file.render(**self.context)
-
-        bucket = self._ensure_bucket(
-            self.context.account.account_number,
-            self.yolo_file.templates['account']['region'],
-            self.app_bucket_name
-        )
-
-        bucket_folder_prefix = (
-            const.BUCKET_FOLDER_PREFIXES['account-templates'].format(
-                timestamp=self.now_timestamp
-            )
-        )
-
-        tags = [
-            const.YOLO_STACK_TAGS['created-with-yolo-version'],
-            # Always protect baseline infra stacks:
-            const.YOLO_STACK_TAGS['protected'],
-        ]
-
-        self._deploy_stack(
-            self.account_stack_name,
-            self.yolo_file.templates['account'],
-            bucket_folder_prefix,
-            bucket,
-            self.context.account.account_number,
-            self.yolo_file.templates['account']['region'],
-            tags,
-            dry_run=dry_run,
-            asynchronous=asynchronous,
-        )
-
     def status(self, stage=None):
         self.set_up_yolofile_context()
         self._yolo_file = self.yolo_file.render(**self.context)
