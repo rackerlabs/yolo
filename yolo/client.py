@@ -405,6 +405,21 @@ class YoloClient(object):
         return stgs_accts_regions
 
     def _ensure_bucket(self, acct_num, region, bucket_name):
+        """Make sure an S3 bucket exists in the specified account/region.
+
+        If it doesn't exist, create it.
+
+        :param str acct_num:
+            AWS account number.
+        :param str region:
+            AWS region in which to create the bucket (e.g., us-east-1,
+            eu-west-1, etc.).
+        :param str bucket_name:
+            Name of the target bucket.
+
+        :returns:
+            :class:`boto3.resources.factory.s3.Bucket` instance.
+        """
         s3_client = self.faws_client.boto3_session(acct_num).client(
             's3', region_name=region
         )
@@ -433,9 +448,49 @@ class YoloClient(object):
         return bucket
 
     def _create_or_update_stack(self, cf_client, stack_name, master_url,
-                                stack_params, tags, recreate=False,
-                                dry_run=False, asynchronous=False,
-                                force=False):
+                                stack_params, tags, asynchronous=False,
+                                dry_run=False, protected=False,
+                                recreate=False):
+        """Create a new or update an existing stack.
+
+        :param cf_client:
+            :class:`botocore.client.CloudFormation` instance.
+        :param str stack_name:
+            Unique name of the stack to create or update.
+        :param str master_url:
+            URL location (in S3) of the "master" CloudFormation template to use
+            for creating/updating a stack.
+        :param list stack_params:
+            (Optional.) A list of parameters to pass to the CloudFormation API
+            call. Each list item is a dict which must contain the keys
+            ``ParameterKey`` and ``ParameterValue``.
+
+            Alternatively, you can specify ``UsePreviousValue`` instead of
+            ``ParameterValue``. This only applies to stack updates, not
+            creation.
+        :param list tags:
+            A list of tags apply to the CloudFormation stack. Each
+            list item is a dict containing the keys ``Key`` and ``Value``.
+        :param bool asynchronous:
+            Stack creates/updates may take a while to complete, sometimes more
+            than 40 minutes depending on the change. Set this to ``true`` to
+            return as soon as possible and let CloudFormation handle the
+            change. By default ``asynchronous`` is set to ``false``, which
+            means that we block and wait for the stack create/update to finish
+            before returning.
+        :param bool dry_run:
+            Set to ``true`` to perform a dry run and show the proposed changes
+            without actually applying them.
+        :param bool protected:
+            If ``true``, make sure that stack termination protection is enabled
+            (whether it is a new or existing stack). Note that setting this to
+            ``false`` will not disable protection; that must be done manually.
+        :param bool recreate:
+            This only applies to stack updates.
+
+            If ``true``, tear down and re-create the stack from scratch.
+            Otherwise, just try to update the existing stack.
+        """
         if dry_run:
             # Dry run only makes sense for updates, not creates.
             self._update_stack_dry_run(
@@ -444,7 +499,8 @@ class YoloClient(object):
         else:
             self._do_create_or_update_stack(
                 cf_client, stack_name, master_url, stack_params, tags,
-                recreate=recreate, asynchronous=asynchronous, force=force,
+                recreate=recreate, asynchronous=asynchronous,
+                protected=protected,
             )
 
     def _update_stack_dry_run(self, cf_client, stack_name,
@@ -606,7 +662,11 @@ class YoloClient(object):
     def _do_create_or_update_stack(self, cf_client, stack_name, master_url,
                                    stack_params, tags, recreate=False,
                                    asynchronous=False,
-                                   force=False):
+                                   protected=False):
+        """Actually perform the stack create/update.
+
+        For parameter info, see :meth:`_create_or_update_stack`.
+        """
         cf = CloudFormation(cf_client)
         stack_exists, stack_details = cf.stack_exists(stack_name)
 
@@ -615,36 +675,73 @@ class YoloClient(object):
             if not stack_exists:
                 cf.create_stack(
                     stack_name, master_url, stack_params, tags,
-                    asynchronous=asynchronous
+                    asynchronous=asynchronous, protected=protected,
                 )
             elif stack_exists and recreate:
                 # This assignment asserts that there is only one stack in the
                 # list. This should always be the case. If not, something has
                 # gone wrong.
-                [the_stack] = stack_details['Stacks']
-                if const.YOLO_STACK_TAGS['protected'] in the_stack['Tags']:
-                    # The stack is protected.
-                    if not force:
-                        # We can't touch this stack.
-                        raise YoloError(
-                            'Unable to re-create stack: Stack is protected and'
-                            ' probably for a good reason. Use --force (with '
-                            'caution) to override.'
-                        )
 
-                cf.recreate_stack(
-                    stack_name, master_url, stack_params, tags,
-                    stack_details, asynchronous=asynchronous
-                )
+                # Before recreating the stack, we need to check if it's
+                # protected. There are two ways to protect a stack:
+                # 1. Add a `yolo:Protected` tag to the stack. Yolo will set
+                # this tag automatically for `protected` stacks to "true"
+                # (technically it just needs to be set to any value, according
+                # to the logic below).
+                # 2. Use the new CF termination protection feature:
+                # http://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/using-cfn-protect-stacks.html.
+                #
+                # The second approach is preferred, so if a stack is protected
+                # with the first (older) approach, apply termination protection
+                # just as an added layer of security.
+                [the_stack] = stack_details['Stacks']
+                is_protected = False
+                if the_stack.get('EnableTerminationProtection', False):
+                    LOG.info('Stack "%s" is protected by CloudFormation.',
+                             stack_name)
+                    # The stack is protected using the new approach (CF
+                    # termination protection).
+                    is_protected = True
+                elif const.YOLO_STACK_TAGS['protected'] in the_stack['Tags']:
+                    LOG.info('Stack "%s" is protected by Yolo.', stack_name)
+                    is_protected = True
+                    # Since we bothered to look, enable hard termination
+                    # protection while we're here:
+                    LOG.info('Adding CloudFormation termination protection to '
+                             'stack "%s"...', stack_name)
+                    cf_client.update_termination_protection(
+                        EnableTerminationProtection=True,
+                        StackName=stack_name,
+                    )
+
+                if is_protected:
+                    # We can't touch this stack.
+                    raise YoloError(
+                        'Unable to re-create stack "{}": Stack is protected '
+                        'and probably for a good reason.'.format(stack_name)
+                    )
+                else:
+                    # Go ahead and recreate it.
+                    cf.recreate_stack(
+                        stack_name, master_url, stack_params, tags,
+                        stack_details, asynchronous=asynchronous,
+                        protected=is_protected,
+                    )
             elif stack_exists and not recreate:
                 cf.update_stack(
                     stack_name, master_url, stack_params,
-                    asynchronous=asynchronous
+                    asynchronous=asynchronous, protected=protected,
                 )
         except botocore.exceptions.ClientError as err:
             if 'No updates are to be performed' in str(err):
                 # Nothing changed
                 print('No changes to apply to stack.')
+            elif 'TerminationProtection is enabled' in str(err):
+                raise YoloError(
+                    'Stack "{}" is protected; deletion is not allowed.'.format(
+                        stack_name
+                    )
+                )
             elif 'ValidationError' in str(err):
                 # TODO(szilveszter): We can actually figure out the
                 # actual issue, skipping that for now.
@@ -696,8 +793,34 @@ class YoloClient(object):
         print(tabulate.tabulate(table, headers='firstrow'))
 
     def deploy_infra(self, stage=None, account=None, dry_run=False,
-                     asynchronous=False, recreate=False, force=False):
-        """Deploy infrastructure for an account or stage."""
+                     asynchronous=False, recreate=False):
+        """Deploy infrastructure for an account or stage.
+
+        :param str stage:
+            name of the stage for which to create/update infrastructure.
+
+            You can specify either ``stage`` or ``account``, but not both.
+        :param str account:
+            Name or number of the account for which to create/update
+            infrastructure.
+
+            You can specify either ``stage`` or ``account``, but not both.
+        :param bool asynchronous:
+            Stack creates/updates may take a while to complete, sometimes more
+            than 40 minutes depending on the change. Set this to ``true`` to
+            return as soon as possible and let CloudFormation handle the
+            change. By default ``asynchronous`` is set to ``false``, which
+            means that we block and wait for the stack create/update to finish
+            before returning.
+        :param bool dry_run:
+            Set to ``true`` to perform a dry run and show the proposed changes
+            without actually applying them.
+        :param bool recreate:
+            This only applies to stack updates.
+
+            If ``true``, tear down and re-create the stack from scratch.
+            Otherwise, just try to update the existing stack.
+        """
         with_stage = stage is not None
         with_account = account is not None
 
@@ -721,39 +844,150 @@ class YoloClient(object):
 
         if stage is not None:
             # Deploy stage-level templates
-            region = self.context.stage.region
-            bucket_folder_prefix = (
-                const.BUCKET_FOLDER_PREFIXES['stage-templates'].format(
-                    stage=self.context.stage.name, timestamp=self.now_timestamp
-                )
-            )
-            templates_cfg = self.yolo_file.templates['stage']
-            tags = [const.YOLO_STACK_TAGS['created-with-yolo-version']]
-            # TODO(larsbutler): Add `protected` attribute to the
-            # ``self.context.stage`` so that we don't have to fetch stage
-            # config to get it.
-            stage_cfg = self.yolo_file.get_stage_config(stage)
-            if stage_cfg.get('protected', False):
-                tags.append(const.YOLO_STACK_TAGS['protected'])
-            stack_name = self.get_stage_stack_name(
-                self.context.account.account_number,
-                self.context.stage.name,
+            self._deploy_stage_stack(
+                dry_run=dry_run,
+                asynchronous=asynchronous,
+                recreate=recreate,
             )
         else:
             # Deploy account-level templates:
-            region = self.yolo_file.templates['account']['region']
-            bucket_folder_prefix = (
-                const.BUCKET_FOLDER_PREFIXES['account-templates'].format(
-                    timestamp=self.now_timestamp
-                )
+            self._deploy_account_stack(
+                dry_run=dry_run,
+                asynchronous=asynchronous,
             )
-            templates_cfg = self.yolo_file.templates['account']
-            tags = [
-                const.YOLO_STACK_TAGS['created-with-yolo-version'],
-                # Always protect account-level infra stacks:
-                const.YOLO_STACK_TAGS['protected'],
-            ]
-            stack_name = self.account_stack_name
+
+    def _deploy_stage_stack(self, dry_run=False, asynchronous=False,
+                            recreate=False):
+        """Deploy stage-level infrastructure for the current context.
+
+        :param bool dry_run:
+            Set to ``true`` to perform a dry run and show the proposed changes
+            without actually applying them.
+        :param bool asynchronous:
+            Stack creates/updates may take a while to complete, sometimes more
+            than 40 minutes depending on the change. Set this to ``true`` to
+            return as soon as possible and let CloudFormation handle the
+            change. By default ``asynchronous`` is set to ``false``, which
+            means that we block and wait for the stack create/update to finish
+            before returning.
+        :param bool recreate:
+            This only applies to stack updates.
+
+            If ``true``, tear down and re-create the stack from scratch.
+            Otherwise, just try to update the existing stack.
+        """
+        region = self.context.stage.region
+        bucket_folder_prefix = (
+            const.BUCKET_FOLDER_PREFIXES['stage-templates'].format(
+                stage=self.context.stage.name, timestamp=self.now_timestamp
+            )
+        )
+        templates_cfg = self.yolo_file.templates['stage']
+
+        stack_name = self.get_stage_stack_name(
+            self.context.account.account_number,
+            self.context.stage.name,
+        )
+
+        # TODO(larsbutler): Add `protected` attribute to the
+        # ``self.context.stage`` so that we don't have to fetch stage
+        # config to get it.
+        protected = False
+        stage_cfg = self.yolo_file.get_stage_config(self.context.stage.name)
+        if stage_cfg.get('protected', False):
+            protected = True
+
+        self._deploy_stack(
+            stack_name,
+            templates_cfg['path'],
+            templates_cfg['params'],
+            bucket_folder_prefix,
+            region,
+            dry_run=dry_run,
+            asynchronous=asynchronous,
+            recreate=recreate,
+            protected=protected,
+        )
+
+    def _deploy_account_stack(self, dry_run=False,
+                              asynchronous=False):
+        """Deploy account-level infrastructure for the current context.
+
+        :param bool dry_run:
+            Set to ``true`` to perform a dry run and show the proposed changes
+            without actually applying them.
+        :param bool asynchronous:
+            Stack creates/updates may take a while to complete, sometimes more
+            than 40 minutes depending on the change. Set this to ``true`` to
+            return as soon as possible and let CloudFormation handle the
+            change. By default ``asynchronous`` is set to ``false``, which
+            means that we block and wait for the stack create/update to finish
+            before returning.
+        """
+        region = self.yolo_file.templates['account']['region']
+        bucket_folder_prefix = (
+            const.BUCKET_FOLDER_PREFIXES['account-templates'].format(
+                timestamp=self.now_timestamp
+            )
+        )
+        templates_cfg = self.yolo_file.templates['account']
+        stack_name = self.account_stack_name
+
+        self._deploy_stack(
+            stack_name,
+            templates_cfg['path'],
+            templates_cfg['params'],
+            bucket_folder_prefix,
+            region,
+            dry_run=dry_run,
+            asynchronous=asynchronous,
+            # Always protect account-level infra stacks:
+            protected=True,
+        )
+
+    def _deploy_stack(self, stack_name, templates_path, templates_params,
+                      bucket_folder_prefix, region, asynchronous=False,
+                      dry_run=False, protected=False, recreate=False):
+        """Deploy the specified template to a new or existing stack.
+
+        :param str stack_name:
+            Unique name of the stack to create or update.
+        :param str templates_path:
+            File system directory location from which to get CloudFormation
+            templates for this deployment.
+        :param dict templates_params:
+            Dict of key/value pairs to input as parameters to the
+            CloudFormation stack deployment.
+        :param str bucket_folder_prefix:
+            Location in the yolo S3 bucket to store CloudFormation templates.
+            Template files will be copied from the local file system to this
+            location.
+        :param str region:
+            AWS region in which to create the bucket (e.g., us-east-1,
+            eu-west-1, etc.).
+        :param bool asynchronous:
+            Stack creates/updates may take a while to complete, sometimes more
+            than 40 minutes depending on the change. Set this to ``true`` to
+            return as soon as possible and let CloudFormation handle the
+            change. By default ``asynchronous`` is set to ``false``, which
+            means that we block and wait for the stack create/update to finish
+            before returning.
+        :param bool dry_run:
+            Set to ``true`` to perform a dry run and show the proposed changes
+            without actually applying them.
+        :param bool protected:
+            If ``true``, make sure that stack termination protection is enabled
+            (whether it is a new or existing stack). Note that setting this to
+            ``false`` will not disable protection; that must be done manually.
+        :param bool recreate:
+            This only applies to stack updates.
+
+            If ``true``, tear down and re-create the stack from scratch.
+            Otherwise, just try to update the existing stack.
+        """
+        tags = [const.YOLO_STACK_TAGS['created-with-yolo-version']]
+        if protected:
+            tags.append(const.YOLO_STACK_TAGS['protected'])
 
         bucket = self._ensure_bucket(
             self.context.account.account_number,
@@ -761,31 +995,13 @@ class YoloClient(object):
             self.app_bucket_name,
         )
 
-        self._deploy_stack(
-            stack_name,
-            templates_cfg,
-            bucket_folder_prefix,
-            bucket,
-            self.context.account.account_number,
-            region,
-            tags,
-            dry_run=dry_run,
-            asynchronous=asynchronous,
-            recreate=recreate,
-            force=force,
-        )
-
-    def _deploy_stack(self, stack_name, templates_cfg, bucket_folder_prefix,
-                      bucket, acct_num, region, tags,
-                      dry_run=False, asynchronous=False, recreate=False,
-                      force=False):
-        if os.path.isabs(templates_cfg['path']):
-            full_templates_dir = templates_cfg['path']
+        if os.path.isabs(templates_path):
+            full_templates_dir = templates_path
         else:
             # Template dir is relative to the location of the yolo.yaml file.
             working_dir = os.path.dirname(self._yolo_file_path)
             full_templates_dir = os.path.join(
-                working_dir, templates_cfg['path']
+                working_dir, templates_path
             )
 
         files = os.listdir(full_templates_dir)
@@ -816,7 +1032,9 @@ class YoloClient(object):
                 ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
             )
 
-        cf_client = self.faws_client.boto3_session(acct_num).client(
+        cf_client = self.faws_client.boto3_session(
+            self.context.account.account_number
+        ).client(
             'cloudformation',
             region_name=region,
         )
@@ -831,54 +1049,18 @@ class YoloClient(object):
         )
         stack_params = [
             dict(ParameterKey=k, ParameterValue=v)
-            for k, v in templates_cfg['params'].items()
+            for k, v in templates_params.items()
         ]
 
         try:
             self._create_or_update_stack(
                 cf_client, stack_name, master_url, stack_params, tags,
                 dry_run=dry_run, recreate=recreate, asynchronous=asynchronous,
-                force=force,
+                protected=protected,
             )
         except yolo.exceptions.CloudFormationError as err:
             # Re-raise it as a friendly error message:
             raise YoloError(str(err))
-
-    def deploy_baseline_infra(self, account, dry_run=False,
-                              asynchronous=False):
-        """Deploy baseline infrastructure for a given account."""
-        self.set_up_yolofile_context(account=account)
-        self._yolo_file = self.yolo_file.render(**self.context)
-
-        bucket = self._ensure_bucket(
-            self.context.account.account_number,
-            self.yolo_file.templates['account']['region'],
-            self.app_bucket_name
-        )
-
-        bucket_folder_prefix = (
-            const.BUCKET_FOLDER_PREFIXES['account-templates'].format(
-                timestamp=self.now_timestamp
-            )
-        )
-
-        tags = [
-            const.YOLO_STACK_TAGS['created-with-yolo-version'],
-            # Always protect baseline infra stacks:
-            const.YOLO_STACK_TAGS['protected'],
-        ]
-
-        self._deploy_stack(
-            self.account_stack_name,
-            self.yolo_file.templates['account'],
-            bucket_folder_prefix,
-            bucket,
-            self.context.account.account_number,
-            self.yolo_file.templates['account']['region'],
-            tags,
-            dry_run=dry_run,
-            asynchronous=asynchronous,
-        )
 
     def status(self, stage=None):
         self.set_up_yolofile_context()
