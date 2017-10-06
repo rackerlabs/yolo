@@ -114,9 +114,33 @@ class YoloFile(object):
         volup.Optional('stage'): STRING_SCHEMA,
     })
     APIGATEWAY_SCHEMA = volup.Schema({
-        volup.Optional('custom_domain'): STRING_OR_DICT_SCHEMA,
-        volup.Optional('base_path'): STRING_SCHEMA,
-        volup.Optional('rest_api_name'): STRING_SCHEMA,
+        volup.Required('rest_api_name'): STRING_SCHEMA,
+        volup.Required('swagger_template'): STRING_SCHEMA,
+
+        volup.Optional('domains'): [{
+            volup.Optional('domain_name'): STRING_OR_DICT_SCHEMA,
+            volup.Optional('base_path'): STRING_SCHEMA,
+        }],
+
+        volup.Optional('authorizers'): [{
+            volup.Required('name'): STRING_SCHEMA,
+            volup.Required('type'): volup.Any(
+                'TOKEN', 'REQUEST', 'COGNITO_USER_POOLS'
+            ),
+            volup.Optional('providerARNs'): [STRING_SCHEMA],
+            volup.Optional('authType'): STRING_SCHEMA,
+            volup.Optional('authorizerUri'): STRING_SCHEMA,
+            volup.Optional('authorizerCredentials'): STRING_SCHEMA,
+            volup.Optional('identitySource'): STRING_SCHEMA,
+            volup.Optional('identityValidationExpression'): STRING_SCHEMA,
+            volup.Optional('authorizerResultTtlInSeconds'): int,
+        }],
+        volup.Optional('integration'): {
+            volup.Required('type'): STRING_SCHEMA,
+            volup.Required('uri'): STRING_SCHEMA,
+            volup.Required('passthroughBehavior'): STRING_SCHEMA,
+            volup.Optional('credentials'): STRING_SCHEMA,
+        },
     })
     SERVICE_TYPE_S3 = 's3'
     SERVICE_TYPE_LAMBDA = 'lambda'
@@ -130,24 +154,23 @@ class YoloFile(object):
         # Many services, keyed by name
         STRING_SCHEMA: {  # service name, arbitary string
             volup.Required('type'): volup.Any(*SERVICE_TYPES),
-            # Only required for S3 types services.
-            # TODO(larsbutler): It might make sense to also use this for
-            # placing lambda service build artifacts (swagger.json,
-            # lambda_function.zip, etc.) so that we consistently handle
-            # uploads/pushes of builds, rather than being implicit about
-            # everything and placing build artifacts into source directories--
-            # which is not ideal.
-            volup.Optional('dist_path'): STRING_SCHEMA,
-            volup.Optional('parameters'): PARAMETERS_SCHEMA,
-            volup.Optional('yoke'): YOKE_SCHEMA,
             # TODO(larsbutler): Make these conditional on the service type (s3)
             volup.Optional('bucket_name'): STRING_SCHEMA,
-            # TODO(larsbutler): Make these conditional on the service type
-            # (lambda-apigateway)
-            # Can be a simple dict, or a list of dicts as well.
-            volup.Optional('apigateway'): volup.Any(APIGATEWAY_SCHEMA, [APIGATEWAY_SCHEMA]),
-            # Only required for lambda/lambda-apigateway services.
-            volup.Optional('lambda_function_configuration'): YOKE_LAMBDA_FN_CFG,
+            volup.Optional('build'): {
+                volup.Required('working_dir'): STRING_SCHEMA,
+                volup.Required('dist_dir'): STRING_SCHEMA,
+                volup.Required('include'): [STRING_SCHEMA],
+                volup.Optional('dependencies'): STRING_SCHEMA,
+            },
+            volup.Optional('deploy'): {
+                # TODO(larsbutler): Make these conditional on the service type
+                # (lambda-apigateway)
+                # Can be a simple dict, or a list of dicts as well.
+                volup.Optional('apigateway'): APIGATEWAY_SCHEMA,
+                # Only required for lambda/lambda-apigateway services.
+                volup.Optional('lambda_function_configuration'): YOKE_LAMBDA_FN_CFG,
+                volup.Optional('parameters'): PARAMETERS_SCHEMA,
+            },
         }
     })
     # top-level schema
