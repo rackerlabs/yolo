@@ -62,6 +62,17 @@ config = dict(
         'voluptuous',
         'yoke',
     ],
+    classifiers=[
+        'Development Status :: 3 - Alpha',
+        'License :: OSI Approved :: Apache Software License',
+        'Intended Audience :: Developers',
+        'Intended Audience :: Information Technology',
+        'Operating System :: OS Independent',
+        'Programming Language :: Python :: 2.7',
+        'Programming Language :: Python :: 3.4',
+        'Programming Language :: Python :: 3.6',
+        'Topic :: Software Development :: Build Tools',
+    ],
 )
 
 setup(**config)
