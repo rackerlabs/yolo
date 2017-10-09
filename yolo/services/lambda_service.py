@@ -19,8 +19,6 @@ import tempfile
 import botocore.exceptions
 import tabulate
 import yaml
-from yoke.config import YokeConfig
-from yoke.shell import build as yoke_build
 
 import yolo.build
 import yolo.client
@@ -284,12 +282,8 @@ class LambdaService(yolo.services.BaseService):
         )
         # With the newly uploaded lambda function version, create an alias for
         # the function using the supplied stage for the alias name.
-        # NOTE(szilveszter): We have to use the Yoke-specific stage, if
-        # available, because that's the stage we're putting the base path
-        # mapping in place for.
-        yoke_stage = service_cfg.get('yoke', {}).get('stage', stage)
         self._create_lambda_alias_for_stage(
-            lambda_fn_cfg['FunctionName'], fn_version, yoke_stage
+            lambda_fn_cfg['FunctionName'], fn_version, stage
         )
 
         # Once the lambda deployment is done, finish wiring it up to API
@@ -773,14 +767,10 @@ class LambdaService(yolo.services.BaseService):
                                       swagger_contents)
 
         # Deploy the API to the target stage:
-        # NOTE(szilveszter): We have to use the Yoke-specific stage, if
-        # available, because that's the stage we're putting the base path
-        # mapping in place for.
-        yoke_stage = service_cfg.get('yoke', {}).get('stage', stage)
-        print('Deploying API to stage "{}"...'.format(yoke_stage))
+        print('Deploying API to stage "{}"...'.format(stage))
         apig_client.create_deployment(
             restApiId=rest_api_id,
-            stageName=yoke_stage,
+            stageName=stage,
         )
 
         print('Configuring API Gateway/Lambda base path mapping...')
@@ -958,7 +948,6 @@ class LambdaService(yolo.services.BaseService):
             rest_api_id = self._get_rest_api_id(
                 apigateway_config['rest_api_name']
             )
-            yoke_stage = service_cfg.get('yoke', {}).get('stage', stage)
             # Add base path mapping
             domains = apigateway_config['domains']
             # TODO(larsbutler): Can we assume there is only one?
@@ -997,7 +986,7 @@ class LambdaService(yolo.services.BaseService):
                 )
                 if (
                     base_path_mapping['restApiId'] != rest_api_id or
-                    base_path_mapping['stage'] != yoke_stage
+                    base_path_mapping['stage'] != stage
                 ):
                     # TODO(szilveszter): If the base path mapping was changed, we
                     # have to warn the user about this, because unfortunately the
@@ -1014,16 +1003,14 @@ class LambdaService(yolo.services.BaseService):
                     domainName=domain_name,
                     basePath=base_path,
                     restApiId=rest_api_id,
-                    # It's important to take the `yoke` stage here, since it may vary
-                    # from the `yolo` stage.
-                    stage=yoke_stage,
+                    stage=stage,
                 )
                 print(
                     'Created base path mapping of {domain} to '
                     '{rest_api_name}:{stage}'.format(
                         domain=domain_name,
                         rest_api_name=apigateway_config['rest_api_name'],
-                        stage=yoke_stage,
+                        stage=stage,
                     )
                 )
 

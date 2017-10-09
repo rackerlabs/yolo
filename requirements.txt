@@ -1,6 +1,7 @@
 awscli
 boto3
 click
+docker
 jinja2
 keyring==8.7.0
 keyrings.alt
@@ -10,4 +11,3 @@ requests
 # Multiline support was just to tabulate trunk, but it hasn't been release yet:
 git+https://bitbucket.org/astanin/python-tabulate/commits/a93034a59f3e2787ad1114850c832147a20d9820
 voluptuous
-yoke

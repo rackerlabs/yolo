@@ -56,12 +56,10 @@ Options:
 Commands:
   build-lambda           Build Lambda function packages.
   clear-config           Clear cached configuration for `yolo`.
-  decrypt-yoke-secrets   Decrypt Yoke secrets.
   deploy-baseline-infra  DEPRECATED: Use `yolo deploy-infra` instead.
   deploy-infra           Deploy infrastructure from templates.
   deploy-lambda          Deploy Lambda functions for services.
   deploy-s3              Deploy a built S3 application.
-  encrypt-yoke-secrets   Encrypt Yoke secrets.
   list-accounts          List AWS accounts.
   list-builds            List the pushed builds for a service/stage.
   list-lambda-builds     DEPRECATED: Use `yolo list-builds` instead.

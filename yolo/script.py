@@ -318,26 +318,6 @@ def run(yolo_file=None, **kwargs):
     client.YoloClient(yolo_file=yolo_file).run(**kwargs)
 
 
-@cli.command(name='encrypt-yoke-secrets')
-@service_option(required=True)
-@stage_option(required=True)
-@yolo_file_option()
-@handle_yolo_errors
-def encrypt_yoke_secrets(yolo_file=None, **kwargs):
-    """Encrypt Yoke secrets."""
-    client.YoloClient(yolo_file=yolo_file).encrypt_yoke_secrets(**kwargs)
-
-
-@cli.command(name='decrypt-yoke-secrets')
-@service_option(required=True)
-@stage_option(required=True)
-@yolo_file_option()
-@handle_yolo_errors
-def decrypt_yoke_secrets(yolo_file=None, **kwargs):
-    """Decrypt Yoke secrets."""
-    client.YoloClient(yolo_file=yolo_file).decrypt_yoke_secrets(**kwargs)
-
-
 @cli.command(name='show-parameters')
 @service_option(required=True)
 @stage_option(required=True)
