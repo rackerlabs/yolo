@@ -1162,18 +1162,7 @@ class YoloClient(object):
         )
         service_client.list_builds(service, stage, bucket)
 
-    def deploy_lambda(self, service, stage, version, from_local, timeout):
-        if version is None and not from_local:
-            raise YoloError(
-                'ERROR: You have to either specify a version, or use '
-                '--from-local.'
-            )
-        if version is not None and from_local:
-            raise YoloError(
-                'ERROR: You can only specify one of --version or --from-local,'
-                ' but not both.'
-            )
-
+    def deploy_lambda(self, service, stage, version, timeout):
         self.set_up_yolofile_context(stage=stage)
         self._yolo_file = self.yolo_file.render(**self.context)
 
@@ -1191,10 +1180,7 @@ class YoloClient(object):
         lambda_svc = lambda_service.LambdaService(
             self.yolo_file, self.faws_client, self.context, timeout
         )
-        if from_local:
-            lambda_svc.deploy_local_version(service, stage)
-        else:
-            lambda_svc.deploy(service, stage, version, bucket)
+        lambda_svc.deploy(service, stage, version, bucket)
 
     def deploy_s3(self, stage, service, version):
         self.set_up_yolofile_context(stage=stage)

@@ -244,11 +244,6 @@ def list_builds(yolo_file=None, **kwargs):
     help='Version of a build to deploy',
 )
 @click.option(
-    '--from-local',
-    is_flag=True,
-    help='Deploy from a locally built ZIP file.',
-)
-@click.option(
     '--timeout',
     metavar='SECONDS',
     type=int,

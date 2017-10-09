@@ -140,56 +140,6 @@ class LambdaService(yolo.services.BaseService):
             ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
         )
 
-    def deploy_local_version(self, service, stage):
-        """Deploy a Lambda service from a local ZIP file.
-
-        :param str service:
-            Name of the service. See ``services`` in the yolo.yml file.
-        :param str stage:
-            Stage to deploy to.
-        """
-        print('Deploying {service} from local to stage "{stage}"...'.format(
-            service=service, stage=stage
-        ))
-        service_cfg = self.yolo_file.services[service]
-        lambda_fn_cfg = service_cfg['lambda_function_configuration']
-        lambda_fn_path = os.path.join(
-            os.path.abspath(service_cfg['dist_path']),
-            'lambda_function.zip'
-        )
-        with open(lambda_fn_path, 'rb') as fp:
-            local_zip_contents = fp.read()
-        code_config = dict(ZipFile=local_zip_contents)
-        # The build yolo file is the same as the local copy, so just use that.
-        self.build_yolo_file = self.yolo_file
-
-        # Create a new lambda function version. If the lambda function already
-        # exists, just create a new version of the function. If the function
-        # doesn't exists, create the function.
-        fn_version = self._create_or_update_lambda_function(
-            service, stage, lambda_fn_cfg, code_config
-        )
-        # With the newly uploaded lambda function version, create an alias for
-        # the function using the supplied stage for the alias name.
-        # NOTE(szilveszter): We have to use the Yoke-specific stage, if
-        # available, because that's the stage we're putting the base path
-        # mapping in place for.
-        yoke_stage = service_cfg['yoke'].get('stage', stage)
-        self._create_lambda_alias_for_stage(
-            lambda_fn_cfg['FunctionName'], fn_version, yoke_stage
-        )
-
-        # Once the lambda deployment is done, finish wiring it up to API
-        # Gateway, if applicable.
-        if service_cfg['type'] == yolo_file.YoloFile.SERVICE_TYPE_LAMBDA_APIGATEWAY:
-            swagger_yaml_path = os.path.join(
-                service_cfg['yoke']['working_dir'], 'swagger.yml'
-            )
-            with open(swagger_yaml_path, 'r') as fp:
-                swagger_contents = fp.read()
-
-            self._deploy_api(service, stage, swagger_contents)
-
     def deploy(self, service, stage, version, bucket):
         """Deploy a Lambda service from an existing build.
 
