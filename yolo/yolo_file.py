@@ -29,7 +29,9 @@ if PY3:
 STRING_SCHEMA = volup.Any(str, unicode)
 STRING_OR_DICT_SCHEMA = volup.Any(str, unicode, dict)
 
-AWSAccount = namedtuple('AWSAccount', ['name', 'account_number'])
+AWSAccount = namedtuple(
+    'AWSAccount', ['name', 'account_number', 'default_region']
+)
 
 
 class YoloFile(object):
@@ -40,13 +42,13 @@ class YoloFile(object):
     ACCOUNT_SCHEMA = volup.Schema({
         volup.Required('name'): STRING_SCHEMA,
         volup.Required('account_number'): STRING_SCHEMA,
+        volup.Required('default_region'): STRING_SCHEMA,
     })
     ACCOUNTS_SCHEMA = volup.Schema([ACCOUNT_SCHEMA])
     # 'templates' section
     ACCOUNT_TEMPLATE_SCHEMA = volup.Schema({
         volup.Required('path'): STRING_SCHEMA,
         volup.Optional('params'): {STRING_SCHEMA: STRING_SCHEMA},
-        volup.Required('region'): STRING_SCHEMA,
     })
     STAGE_TEMPLATE_SCHEMA = volup.Schema({
         volup.Required('path'): STRING_SCHEMA,
@@ -159,7 +161,7 @@ class YoloFile(object):
             volup.Optional('build'): {
                 volup.Required('working_dir'): STRING_SCHEMA,
                 volup.Required('dist_dir'): STRING_SCHEMA,
-                volup.Required('include'): [STRING_SCHEMA],
+                volup.Optional('include'): [STRING_SCHEMA],
                 volup.Optional('dependencies'): STRING_SCHEMA,
             },
             volup.Optional('deploy'): {
@@ -261,16 +263,19 @@ class YoloFile(object):
         # Check if it's an alias or a real number.
         account_name = None
         account_number = None
+        default_region = None
         for acct in self.accounts:
             if acct['name'] == account:
                 # We got an account alias
                 account_name = account
                 account_number = acct['account_number']
+                default_region = acct['default_region']
                 break
             elif acct['account_number'] == account:
                 # We found a matching account
                 account_name = acct['name']
                 account_number = account
+                default_region = acct['default_region']
                 break
         else:
             # We didn't find a matching account number or alias
@@ -278,7 +283,11 @@ class YoloFile(object):
                 'Unable to find a matching account number or alias for '
                 '"{}"'.format(account)
             )
-        return AWSAccount(name=account_name, account_number=account_number)
+        return AWSAccount(
+            name=account_name,
+            account_number=account_number,
+            default_region=default_region,
+        )
 
     def render(self, **variables):
         # Render variables into the yolo file.

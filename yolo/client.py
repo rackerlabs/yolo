@@ -274,7 +274,7 @@ class YoloClient(object):
                 # get account stack outputs
                 account_stack_outputs = self.get_account_outputs(
                     account_cfg.account_number,
-                    self.yolo_file.templates['account']['region']
+                    account_cfg.default_region,
                 )
             else:
                 account_stack_outputs = {}

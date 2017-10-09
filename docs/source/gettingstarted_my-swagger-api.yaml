@@ -1,0 +1,45 @@
+swagger: '2.0'
+basePath: '/myapi/v1'
+info:
+  version: 'v1'
+  title: My API
+  description: This is the long description of my API
+schemes:
+  - https
+consumes:
+  - application/json
+produces:
+  - application/json
+securityDefinitions:
+  auth_token:
+    type: "apiKey"
+    name: "Authorization"
+    in: "header"
+paths:
+  /stuff:
+    get:
+      description: Get a list of stuff
+      operationId: 'myapplication.api.get_stuff'
+      security:
+        - auth_token: []
+      parameters:
+        - name: limit
+          description: Used for pagination to limit pages sizes
+          in: query
+          type: integer
+          required: false
+          default: 100
+        - name: offset
+          description: Used for pagination, indicates the index of the first element to be returned
+          type: integer
+          in: query
+          required: false
+      responses:
+        200:
+          description: Success
+        404:
+          description: Not Found
+        504:
+          description: Gateway Timeout
+        500:
+          description: Internal Server Error
