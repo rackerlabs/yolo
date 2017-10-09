@@ -1415,12 +1415,18 @@ class YoloClient(object):
         self._yolo_file = self.yolo_file.render(**self.context)
 
         service_cfg = self.yolo_file.services[service]
-        # Get stage specific parameter config, or get the default if this is
-        # an ad-hoc/custom stage.
-        parameters = service_cfg['parameters']['stages'].get(
-            # TODO(larsbutler): handle index errors if no default defined.
-            stage, service_cfg['parameters']['stages']['default']
-        )
+        # Get the default parameters first, if available.
+        parameters = service_cfg['parameters']['stages'].get('default', [])
+        # Convert the list to a dict, so that it can be easily overridden by
+        # stage-specific parameters.
+        parameters_dict = {p['name']: p for p in parameters}
+        # Get the stage-specific parameters.
+        stage_parameters = service_cfg['parameters']['stages'].get(stage, [])
+        stage_parameters_dict = {p['name']: p for p in stage_parameters}
+        # Override default parameters with any stage-specific ones.
+        parameters_dict.update(stage_parameters_dict)
+        # Convert back to a list that we'll use going forward.
+        parameters = parameters_dict.values()
 
         if len(param) > 0:
             # Only set specific params.
