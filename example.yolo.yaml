@@ -148,13 +148,17 @@ services:
           - name: 'private_key'
             multiline: true
         # If a stage is not explicitly declared here in this section,
-        # parameters from the `default` stage will be used.
+        # parameters from the `default` stage will be used. The parameters
+        # here are inherited by all other stages, so if they don't exist in
+        # stage-specific sections, they will be available as defined here.
         default:
           - name: 'db_username'
             value: 'dev_admin'
           - name: 'db_password'
           - name: 'private_key'
             multiline: true
+          - name: 'stage'
+            value: '{{ stage.name }}'
   MyUIService:
     type: 's3'
     # Destination bucket where published files are to be stored:
