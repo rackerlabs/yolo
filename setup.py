@@ -53,6 +53,7 @@ config = dict(
         'boto3',
         'botocore',
         'click',
+        'docker',
         'jinja2',
         'keyring==8.7.0',
         'keyrings.alt',
@@ -60,7 +61,6 @@ config = dict(
         'ruamel.yaml',
         'tabulate',
         'voluptuous',
-        'yoke',
     ],
     classifiers=[
         'Development Status :: 3 - Alpha',

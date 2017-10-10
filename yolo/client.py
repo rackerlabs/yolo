@@ -37,14 +37,6 @@ except ImportError:
     have_ipython = False
 import keyring
 import tabulate
-try:
-    from yoke.config import YokeConfig
-    from yoke.shell import build as yoke_build
-    from yoke.utils import decrypt as yoke_decrypt
-    from yoke.utils import encrypt as yoke_encrypt
-    have_yoke = True
-except ImportError:
-    have_yoke = False
 
 from yolo.cloudformation import CloudFormation
 from yolo import const
@@ -73,7 +65,6 @@ logging.basicConfig(
 )
 # Silence third-party lib loggers:
 logging.getLogger('botocore').setLevel(logging.CRITICAL)
-logging.getLogger('yoke').setLevel(logging.CRITICAL)
 logging.getLogger('lambda_uploader').setLevel(logging.CRITICAL)
 
 LOG = logging.getLogger(__name__)
@@ -1134,17 +1125,8 @@ class YoloClient(object):
                 )
 
     def build_lambda(self, stage, service):
-        if not have_yoke:
-            raise YoloError('ERROR: yoke is required for build to work.')
-
         self.set_up_yolofile_context(stage=stage)
         self._yolo_file = self.yolo_file.render(**self.context)
-
-        # Set up AWS credentials for yoke
-        self._setup_aws_credentials_in_environment(
-            self.context.account.account_number,
-            self.context.stage.region,
-        )
 
         lambda_svc = lambda_service.LambdaService(
             self.yolo_file, self.faws_client, self.context
@@ -1180,32 +1162,12 @@ class YoloClient(object):
         )
         service_client.list_builds(service, stage, bucket)
 
-    def deploy_lambda(self, service, stage, version, from_local, timeout):
-        if not have_yoke:
-            raise YoloError('ERROR: yoke is required for deploy to work.')
-
-        if version is None and not from_local:
-            raise YoloError(
-                'ERROR: You have to either specify a version, or use '
-                '--from-local.'
-            )
-        if version is not None and from_local:
-            raise YoloError(
-                'ERROR: You can only specify one of --version or --from-local,'
-                ' but not both.'
-            )
-
+    def deploy_lambda(self, service, stage, version, timeout):
         self.set_up_yolofile_context(stage=stage)
         self._yolo_file = self.yolo_file.render(**self.context)
 
         # TODO(larsbutler): Check if service is actually
         # lambda/lambda-apigateway. If it isn't, throw an error.
-
-        # Set up AWS credentials for yoke
-        self._setup_aws_credentials_in_environment(
-            self.context.account.account_number,
-            self.context.stage.region,
-        )
 
         bucket = self._ensure_bucket(
             self.context.account.account_number,
@@ -1218,98 +1180,7 @@ class YoloClient(object):
         lambda_svc = lambda_service.LambdaService(
             self.yolo_file, self.faws_client, self.context, timeout
         )
-        if from_local:
-            lambda_svc.deploy_local_version(service, stage)
-        else:
-            lambda_svc.deploy(service, stage, version, bucket)
-
-    def encrypt_yoke_secrets(self, stage, service):
-        if not have_yoke:
-            raise YoloError(
-                'yoke is required for encrypt-yoke-secrets to work.')
-
-        self.set_up_yolofile_context(stage=stage)
-        self._yolo_file = self.yolo_file.render(**self.context)
-        if service not in self.yolo_file.services.keys():
-            raise YoloError(
-                'Service could not be found in the Yolo file: {}'.format(
-                    service,
-                ))
-        stage_cfg = self.yolo_file.get_stage_config(stage)
-        # Set up AWS credentials for yoke
-        self._setup_aws_credentials_in_environment(
-            self.context.account.account_number, stage_cfg['region'])
-
-        service_config = self.yolo_file.services[service]
-        if service_config['type'] not in (
-            YoloFile.SERVICE_TYPE_LAMBDA,
-            YoloFile.SERVICE_TYPE_LAMBDA_APIGATEWAY,
-        ):
-            # Nothing to do for now if it isn't a Lambda-type service.
-            raise YoloError(
-                "Service type '{}' not supported by Yoke.".format(
-                    service_config['type'],
-                ))
-
-        # Fake it 'till we make it: prepare data to be passed over to yoke.
-        args = FakeYokeArgs(func=yoke_build, config=None)
-        yoke_config = service_config['yoke']
-        # Get the working directory of the service yoke is handling.
-        # Default to the current directory.
-        yoke_working_dir = os.path.abspath(
-            yoke_config.get('working_dir', '.'))
-        env_dict = yoke_config.get('environment', {})
-        yoke_stage = yoke_config.get('stage', stage)
-        config = YokeConfig(
-            shellargs=args,
-            project_dir=yoke_working_dir,
-            stage=yoke_stage,
-            env_dict=env_dict)
-        yoke_encrypt(config.get_config(skip_decrypt=True), output=True)
-
-    def decrypt_yoke_secrets(self, stage, service):
-        if not have_yoke:
-            raise YoloError(
-                'yoke is required for encrypt-yoke-secrets to work.')
-
-        self.set_up_yolofile_context(stage=stage)
-        self._yolo_file = self.yolo_file.render(**self.context)
-        if service not in self.yolo_file.services.keys():
-            raise YoloError(
-                'Service could not be found in the Yolo file: {}'.format(
-                    service,
-                ))
-        stage_cfg = self.yolo_file.get_stage_config(stage)
-        # Set up AWS credentials for yoke
-        self._setup_aws_credentials_in_environment(
-            self.context.account.account_number, stage_cfg['region'])
-
-        service_config = self.yolo_file.services[service]
-        if service_config['type'] not in (
-            YoloFile.SERVICE_TYPE_LAMBDA,
-            YoloFile.SERVICE_TYPE_LAMBDA_APIGATEWAY,
-        ):
-            # Nothing to do for now if it isn't a Lambda-type service.
-            raise YoloError(
-                "Service type '{}' not supported by Yoke.".format(
-                    service_config['type'],
-                ))
-
-        # Fake it 'till we make it: prepare data to be passed over to yoke.
-        args = FakeYokeArgs(func=yoke_build, config=None)
-        yoke_config = service_config['yoke']
-        # Get the working directory of the service yoke is handling.
-        # Default to the current directory.
-        yoke_working_dir = os.path.abspath(
-            yoke_config.get('working_dir', '.'))
-        env_dict = yoke_config.get('environment', {})
-        yoke_stage = yoke_config.get('stage', stage)
-        config = YokeConfig(
-            shellargs=args,
-            project_dir=yoke_working_dir,
-            stage=yoke_stage,
-            env_dict=env_dict)
-        yoke_decrypt(config.get_config(skip_decrypt=True), output=True)
+        lambda_svc.deploy(service, stage, version, bucket)
 
     def deploy_s3(self, stage, service, version):
         self.set_up_yolofile_context(stage=stage)

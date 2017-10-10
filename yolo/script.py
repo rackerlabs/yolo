@@ -244,11 +244,6 @@ def list_builds(yolo_file=None, **kwargs):
     help='Version of a build to deploy',
 )
 @click.option(
-    '--from-local',
-    is_flag=True,
-    help='Deploy from a locally built ZIP file.',
-)
-@click.option(
     '--timeout',
     metavar='SECONDS',
     type=int,
@@ -316,26 +311,6 @@ def run(yolo_file=None, **kwargs):
             "One (and only one) of --account or --stage should be specified."
         )
     client.YoloClient(yolo_file=yolo_file).run(**kwargs)
-
-
-@cli.command(name='encrypt-yoke-secrets')
-@service_option(required=True)
-@stage_option(required=True)
-@yolo_file_option()
-@handle_yolo_errors
-def encrypt_yoke_secrets(yolo_file=None, **kwargs):
-    """Encrypt Yoke secrets."""
-    client.YoloClient(yolo_file=yolo_file).encrypt_yoke_secrets(**kwargs)
-
-
-@cli.command(name='decrypt-yoke-secrets')
-@service_option(required=True)
-@stage_option(required=True)
-@yolo_file_option()
-@handle_yolo_errors
-def decrypt_yoke_secrets(yolo_file=None, **kwargs):
-    """Decrypt Yoke secrets."""
-    client.YoloClient(yolo_file=yolo_file).decrypt_yoke_secrets(**kwargs)
 
 
 @cli.command(name='show-parameters')

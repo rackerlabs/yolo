@@ -18,9 +18,9 @@ import tempfile
 
 import botocore.exceptions
 import tabulate
-from yoke.config import YokeConfig
-from yoke.shell import build as yoke_build
+import yaml
 
+import yolo.build
 import yolo.client
 from yolo import const
 import yolo.exceptions
@@ -67,29 +67,8 @@ class LambdaService(yolo.services.BaseService):
                 'Service "{}" is not a Lambda service.'.format(service)
             )
 
-        # Fake it 'till we make it: prepare data to be passed over to yoke.
-        args = yolo.client.FakeYokeArgs(func=yoke_build, config=None)
-        yoke_config = service_cfg['yoke']
-        # Get the working directory of the service yoke is handling.
-        # Default to the current directory.
-        yoke_working_dir = os.path.abspath(
-            yoke_config.get('working_dir', '.'))
-        env_dict = yoke_config.get('environment', {})
-        # Let the `yoke` config section override the stage.
-        # There is a `yoke.stage` present, we use that instead of the stage
-        # supplied to `yolo`.
-        # Do this in case the yolo stage is not the same as the yoke stage.
-        # For example, the yolo stage might be `dev`, but the yoke stage
-        # might be `Development`.
-        yoke_stage = yoke_config.get('stage', stage)
-        config = YokeConfig(
-            shellargs=args,
-            project_dir=yoke_working_dir,
-            stage=yoke_stage,
-            env_dict=env_dict)
-        args.config = config.get_config()
-        # Directly hook into yoke
-        yoke_build(args)
+        # Use yolo's built-in Lambda build function.
+        yolo.build.python_build_lambda_function(service_cfg)
 
     def push(self, service, stage, bucket):
         """Push a local build of a Lambda service up into S3.
@@ -127,9 +106,13 @@ class LambdaService(yolo.services.BaseService):
         )
 
         lambda_fn_path = os.path.join(
-            os.path.abspath(service_cfg['dist_path']),
+            os.path.abspath(service_cfg['build']['dist_dir']),
             'lambda_function.zip'
         )
+        swagger_yaml_path = service_cfg['deploy']['apigateway'][
+            'swagger_template'
+        ]
+
         bucket.upload_file(
             Filename=lambda_fn_path,
             Key=os.path.join(bucket_folder_prefix, 'lambda_function.zip'),
@@ -142,9 +125,6 @@ class LambdaService(yolo.services.BaseService):
         ):
             # grab the rendered swagger file from the working_dir
             # and upload it to the S3 bucket
-            swagger_yaml_path = os.path.join(
-                service_cfg['yoke']['working_dir'], 'swagger.yml'
-            )
             bucket.upload_file(
                 Filename=swagger_yaml_path,
                 Key=os.path.join(bucket_folder_prefix, const.SWAGGER_YAML),
@@ -159,56 +139,6 @@ class LambdaService(yolo.services.BaseService):
             Key=os.path.join(bucket_folder_prefix, const.YOLO_YAML),
             ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
         )
-
-    def deploy_local_version(self, service, stage):
-        """Deploy a Lambda service from a local ZIP file.
-
-        :param str service:
-            Name of the service. See ``services`` in the yolo.yml file.
-        :param str stage:
-            Stage to deploy to.
-        """
-        print('Deploying {service} from local to stage "{stage}"...'.format(
-            service=service, stage=stage
-        ))
-        service_cfg = self.yolo_file.services[service]
-        lambda_fn_cfg = service_cfg['lambda_function_configuration']
-        lambda_fn_path = os.path.join(
-            os.path.abspath(service_cfg['dist_path']),
-            'lambda_function.zip'
-        )
-        with open(lambda_fn_path, 'rb') as fp:
-            local_zip_contents = fp.read()
-        code_config = dict(ZipFile=local_zip_contents)
-        # The build yolo file is the same as the local copy, so just use that.
-        self.build_yolo_file = self.yolo_file
-
-        # Create a new lambda function version. If the lambda function already
-        # exists, just create a new version of the function. If the function
-        # doesn't exists, create the function.
-        fn_version = self._create_or_update_lambda_function(
-            service, stage, lambda_fn_cfg, code_config
-        )
-        # With the newly uploaded lambda function version, create an alias for
-        # the function using the supplied stage for the alias name.
-        # NOTE(szilveszter): We have to use the Yoke-specific stage, if
-        # available, because that's the stage we're putting the base path
-        # mapping in place for.
-        yoke_stage = service_cfg['yoke'].get('stage', stage)
-        self._create_lambda_alias_for_stage(
-            lambda_fn_cfg['FunctionName'], fn_version, yoke_stage
-        )
-
-        # Once the lambda deployment is done, finish wiring it up to API
-        # Gateway, if applicable.
-        if service_cfg['type'] == yolo_file.YoloFile.SERVICE_TYPE_LAMBDA_APIGATEWAY:
-            swagger_yaml_path = os.path.join(
-                service_cfg['yoke']['working_dir'], 'swagger.yml'
-            )
-            with open(swagger_yaml_path, 'r') as fp:
-                swagger_contents = fp.read()
-
-            self._deploy_api(service, stage, swagger_contents)
 
     def deploy(self, service, stage, version, bucket):
         """Deploy a Lambda service from an existing build.
@@ -282,7 +212,7 @@ class LambdaService(yolo.services.BaseService):
             os.remove(temp_yolo_yaml_path)
             os.close(fp)
 
-        lambda_fn_cfg = self.build_yolo_file.services[service][
+        lambda_fn_cfg = self.build_yolo_file.services[service]['deploy'][
             'lambda_function_configuration'
         ]
 
@@ -302,12 +232,8 @@ class LambdaService(yolo.services.BaseService):
         )
         # With the newly uploaded lambda function version, create an alias for
         # the function using the supplied stage for the alias name.
-        # NOTE(szilveszter): We have to use the Yoke-specific stage, if
-        # available, because that's the stage we're putting the base path
-        # mapping in place for.
-        yoke_stage = service_cfg['yoke'].get('stage', stage)
         self._create_lambda_alias_for_stage(
-            lambda_fn_cfg['FunctionName'], fn_version, yoke_stage
+            lambda_fn_cfg['FunctionName'], fn_version, stage
         )
 
         # Once the lambda deployment is done, finish wiring it up to API
@@ -652,12 +578,14 @@ class LambdaService(yolo.services.BaseService):
 
         # If there are no paramters defined in the yolo.yaml, we can skip
         # parameter checking and copying entirely.
-        if 'parameters' in service_cfg:
+        if 'parameters' in service_cfg['deploy']:
+
             # Get stage specific parameter config, or get the default if this
             # is an ad-hoc/custom stage.
-            build_yolofile_params = service_cfg['parameters']['stages'].get(
-                # TODO(larsbutler): handle index errors if no default defined.
-                stage, service_cfg['parameters']['stages']['default']
+            build_yolofile_params = service_cfg['deploy'][
+                'parameters'
+            ]['stages'].get(
+                stage, service_cfg['deploy']['parameters']['stages']['default']
             )
             build_yolofile_param_names = set(
                 x['name'] for x in build_yolofile_params
@@ -769,7 +697,7 @@ class LambdaService(yolo.services.BaseService):
         # APIs will clobber each other.
         # Possible solution: Parameterize the APIs based on stage name.
         service_cfg = self.yolo_file.services[service]
-        apig_config = service_cfg['apigateway']
+        apig_config = service_cfg['deploy']['apigateway']
         apig_client = self.faws_client.aws_client(
             self.context.account.account_number,
             'apigateway',
@@ -777,8 +705,42 @@ class LambdaService(yolo.services.BaseService):
         )
 
         rest_api_name = apig_config['rest_api_name']
-        rest_api_id = None
+        rest_api_id = self._create_or_update_rest_api(
+            apig_client, rest_api_name, swagger_contents
+        )
 
+        # Set up authorizers:
+        self._deploy_api_authorizers(apig_client, rest_api_id, service_cfg)
+
+        # Set up integrations (request/response templates):
+        self._deploy_api_integrations(apig_client, rest_api_id, service_cfg,
+                                      swagger_contents)
+
+        # Deploy the API to the target stage:
+        print('Deploying API to stage "{}"...'.format(stage))
+        apig_client.create_deployment(
+            restApiId=rest_api_id,
+            stageName=stage,
+        )
+
+        print('Configuring API Gateway/Lambda base path mapping...')
+        self._add_apig_lambda_base_path_mapping(service, stage)
+        print('Done!')
+
+    def _create_or_update_rest_api(self, apig_client, rest_api_name, swagger_contents):
+        """Create/update a REST API with the given API definition.
+
+        :param apig_client:
+            :class:`botocore.client.APIGateway` instance.
+        :param rest_api_name:
+            Name of the API Gateway REST API.
+        :param str swagger_contents:
+            Contents of the fully rendered Swagger definition that should be
+            uploaded as the REST API specification.
+
+        :returns:
+            The unique ID of the API Gateway REST API.
+        """
         # Create/update REST API:
         try:
             rest_api_id = self._get_rest_api_id(rest_api_name)
@@ -799,21 +761,84 @@ class LambdaService(yolo.services.BaseService):
                 body=swagger_contents,
                 parameters=dict(basepath='prepend'),
             )
+        return rest_api_id
 
-        # Deploy the API to the target stage:
-        # NOTE(szilveszter): We have to use the Yoke-specific stage, if
-        # available, because that's the stage we're putting the base path
-        # mapping in place for.
-        yoke_stage = service_cfg['yoke'].get('stage', stage)
-        print('Deploying API to stage "{}"...'.format(yoke_stage))
-        apig_client.create_deployment(
-            restApiId=rest_api_id,
-            stageName=yoke_stage,
-        )
+    def _deploy_api_authorizers(self, apig_client, rest_api_id, service_cfg):
+        print('Deploying API authorizers...')
 
-        print('Configuring API Gateway/Lambda base path mapping...')
-        self._add_apig_lambda_base_path_mapping(service, stage)
-        print('Done!')
+        # TODO: don't always create one; if one exists, use that
+        authorizers = service_cfg['deploy']['apigateway']['authorizers']
+        for authorizer in authorizers:
+            print('Deploy authorizer "{}"...'.format(authorizer['name']))
+            apig_client.create_authorizer(
+                restApiId=rest_api_id, **authorizer
+            )
+
+    def _deploy_api_integrations(self, apig_client, rest_api_id, service_cfg,
+                                 swagger_contents):
+        print('Deploying API integrations...')
+
+        integration = service_cfg['deploy']['apigateway']['integration']
+        swagger_data = yaml.safe_load(swagger_contents)
+
+        for resource in self._get_api_resources(apig_client, rest_api_id):
+            # Not all resources will have methods defined. For example,
+            # namespaces such as /foo/bar will not have a method defined, but
+            # a child /foo/bar/baz might.
+            # In other words, only concrete resources that have explicit
+            # methods defined will have `resourceMethods` in API Gateway.
+            for method in resource.get('resourceMethods', {}).keys():
+                print(
+                    'Creating integration for resource '
+                    '"{meth} {path}"...'.format(
+                        meth=method,
+                        path=resource['path'],
+                    )
+                )
+                # Add default integration request templates:
+                apig_client.put_integration(
+                    restApiId=rest_api_id,
+                    resourceId=resource['id'],
+                    httpMethod=method,
+                    # TODO: explain this
+                    integrationHttpMethod='POST',
+                    requestTemplates=DEFAULT_REQUEST_TEMPLATES,
+                    **integration
+                )
+                # Now add default integration response templates:
+                # loop through response codes defined for each endpoint
+                # get the config for that code, else use default
+
+                if swagger_data.get('basePath', ''):
+                    resource_path = resource['path'].split(
+                        swagger_data['basePath']
+                    )[1]
+                else:
+                    resource_path = resource['path']
+                relevant_resp_codes = swagger_data['paths'][resource_path].get(
+                    method.lower()
+                ).get('responses').keys()
+                # loop through these status codes and get the default response
+                # template, then set up the integration response:
+                for resp_code in relevant_resp_codes:
+                    resp_integration = DEFAULT_INTEGRATION_RESPONSES.get(
+                        str(resp_code),
+                        DEFAULT_INTEGRATION_RESPONSES['default'],
+                    )
+                    apig_client.put_integration_response(
+                        restApiId=rest_api_id,
+                        resourceId=resource['id'],
+                        httpMethod=method,
+                        **resp_integration
+                    )
+
+    def _get_api_resources(self, apig_client, rest_api_id):
+        """Get all resource defintions for a given REST API."""
+
+        paginator = apig_client.get_paginator('get_resources')
+        for page in paginator.paginate(restApiId=rest_api_id):
+            for resource in page['items']:
+                yield resource
 
     def _get_rest_api_id(self, rest_api_name):
         """Get the ID of a AWS::ApiGateway::RestApi resource, give its name.
@@ -860,7 +885,7 @@ class LambdaService(yolo.services.BaseService):
         service_cfg = self.yolo_file.services[service]
         stage_cfg = self.yolo_file.get_stage_config(stage)
 
-        apigateway_configs = service_cfg['apigateway']
+        apigateway_configs = service_cfg['deploy']['apigateway']
         apig_client = self.faws_client.aws_client(
             self.context.account.account_number,
             'apigateway',
@@ -873,10 +898,12 @@ class LambdaService(yolo.services.BaseService):
             rest_api_id = self._get_rest_api_id(
                 apigateway_config['rest_api_name']
             )
-            yoke_stage = service_cfg['yoke'].get('stage', stage)
             # Add base path mapping
-            base_path = apigateway_config['base_path'].strip()
-            domain_name = apigateway_config['custom_domain']
+            domains = apigateway_config['domains']
+            # TODO(larsbutler): Can we assume there is only one?
+            [domain] = domains
+            domain_name = domain['domain_name']
+            base_path = domain['base_path']
             if domain_name == '':
                 # This is an easy way to let us know the domain does not exist for
                 # the given stage, so let's skip base path mapping creation.
@@ -909,7 +936,7 @@ class LambdaService(yolo.services.BaseService):
                 )
                 if (
                     base_path_mapping['restApiId'] != rest_api_id or
-                    base_path_mapping['stage'] != yoke_stage
+                    base_path_mapping['stage'] != stage
                 ):
                     # TODO(szilveszter): If the base path mapping was changed, we
                     # have to warn the user about this, because unfortunately the
@@ -926,16 +953,14 @@ class LambdaService(yolo.services.BaseService):
                     domainName=domain_name,
                     basePath=base_path,
                     restApiId=rest_api_id,
-                    # It's important to take the `yoke` stage here, since it may vary
-                    # from the `yolo` stage.
-                    stage=yoke_stage,
+                    stage=stage,
                 )
                 print(
                     'Created base path mapping of {domain} to '
                     '{rest_api_name}:{stage}'.format(
                         domain=domain_name,
                         rest_api_name=apigateway_config['rest_api_name'],
-                        stage=yoke_stage,
+                        stage=stage,
                     )
                 )
 
@@ -982,3 +1007,110 @@ class LambdaService(yolo.services.BaseService):
             table.append((key, value))
 
         print(tabulate.tabulate(table, headers='firstrow', tablefmt='simple'))
+
+
+DEFAULT_JSON_REQUEST_TEMPLATE = """\
+{
+  "rawContext": {
+    "apiId": "$context.apiId",
+    "authorizer": {
+      "principalId": "$context.authorizer.principalId",
+      "claims": {
+        "property": "$context.authorizer.claims.property"
+      }
+    },
+    "httpMethod": "$context.httpMethod",
+    "identity": {
+      "accountId": "$context.identity.accountId",
+      "apiKey": "$context.identity.apiKey",
+      "caller": "$context.identity.caller",
+      "cognitoAuthenticationProvider": "$context.identity.cognitoAuthenticationProvider",
+      "cognitoAuthenticationType": "$context.identity.cognitoAuthenticationType",
+      "cognitoIdentityId": "$context.identity.cognitoIdentityId",
+      "cognitoIdentityPoolId": "$context.identity.cognitoIdentityPoolId",
+      "sourceIp": "$context.identity.sourceIp",
+      "user": "$context.identity.user",
+      "userAgent": "$context.identity.userAgent",
+      "userArn": "$context.identity.userArn"
+    },
+    "requestId": "$context.requestId",
+    "resourceId": "$context.resourceId",
+    "resourcePath": "$context.resourcePath",
+    "stage": "$context.stage"
+  },
+  "parameters": {
+    "gateway": {
+      "id": "$context.apiId",
+      "stage": "$context.stage",
+      "request-id" : "$context.requestId",
+      "resource-path" : "$context.resourcePath",
+      "http-method": "$context.httpMethod",
+      "stage-data": {
+        #foreach($param in $stageVariables.keySet())
+        "$param": "$util.escapeJavaScript($stageVariables.get($param))"
+#if($foreach.hasNext),#end
+        #end
+      }
+    },
+    "requestor": {
+      "source-ip": "$context.identity.sourceIp",
+      "user-agent": "$context.identity.userAgent",
+      "account-id" : "$context.identity.accountId",
+      "api-key" : "$context.identity.apiKey",
+      "caller": "$context.identity.caller",
+      "user": "$context.identity.user",
+      "user-arn" : "$context.identity.userArn"
+    },
+    "request": {
+      "querystring": {
+        #foreach($param in $input.params().querystring.keySet())
+        "$param": "$util.escapeJavaScript($input.params().querystring.get($param))"#if($foreach.hasNext),#end
+        #end
+      },
+      "path": {
+        #foreach($param in $input.params().path.keySet())
+        "$param": "$util.escapeJavaScript($input.params().path.get($param))"
+#if($foreach.hasNext),#end
+        #end
+      },
+      "header": {
+        #foreach($param in $input.params().header.keySet())
+        "$param": "$util.escapeJavaScript($input.params().header.get($param))"
+#if($foreach.hasNext),#end
+        #end
+      },
+      "body": $input.json('$')
+    }
+  }
+}
+"""  # noqa
+DEFAULT_REQUEST_TEMPLATES = {
+    'application/json': DEFAULT_JSON_REQUEST_TEMPLATE,
+}
+APPLICATION_JSON_RESPONSE_FMT = (
+    '{"error": {"code": %(rc)s, "message": $input.json(\'$.errorMessage\')}}'
+)
+RESPONSE_CODES = [
+    300, 301, 302, 303, 304, 305, 307,
+    400, 401, 402, 403, 404, 405, 406, 407, 408, 409, 410, 411, 412, 413, 414,
+    415, 416, 417, 418, 422, 423,
+    500, 501, 502, 503, 504, 505,
+]
+DEFAULT_INTEGRATION_RESPONSES = {
+    str(resp_code): {
+        'responseTemplates': {
+            'application/json': (
+                APPLICATION_JSON_RESPONSE_FMT % dict(rc=resp_code)
+            ),
+        },
+        'selectionPattern': '^{rc}:.*'.format(rc=resp_code),
+        'statusCode': str(resp_code),
+    }
+    for resp_code in RESPONSE_CODES
+}
+DEFAULT_INTEGRATION_RESPONSES['default'] = {
+    'responseTemplates': {
+        'application/json': '__passthrough__'
+    },
+    'statusCode': '200',
+}

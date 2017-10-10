@@ -11,6 +11,13 @@ Manage infrastructure and services on AWS for multiple accounts/stages.
  * __Account:__ an AWS account, in some contexts it also means a baseline [infrastructure].
  * __Stage:__ an instance of the project deployed to an account. There may be multiple stages within an account. Examples of stages are "dev", "test", "QA", "production", etc.
 
+## Docker build container for Lambda Functions
+
+The `Dockerfile` contained in this repo is published to
+https://hub.docker.com/r/larsbutler/yolo/. It is built directly from GitHub, so
+if this file is updated the patch needs to merged downstream into the master
+branch of https://github.com/larsbutler/yolo.
+
 ## Workflow
 
  0. Authenticate with "Fanatical Support for AWS" (using Rackspace Cloud credentials), so that AWS account credentials can be fetched when needed, without having to re-authenticate:
@@ -56,12 +63,10 @@ Options:
 Commands:
   build-lambda           Build Lambda function packages.
   clear-config           Clear cached configuration for `yolo`.
-  decrypt-yoke-secrets   Decrypt Yoke secrets.
   deploy-baseline-infra  DEPRECATED: Use `yolo deploy-infra` instead.
   deploy-infra           Deploy infrastructure from templates.
   deploy-lambda          Deploy Lambda functions for services.
   deploy-s3              Deploy a built S3 application.
-  encrypt-yoke-secrets   Encrypt Yoke secrets.
   list-accounts          List AWS accounts.
   list-builds            List the pushed builds for a service/stage.
   list-lambda-builds     DEPRECATED: Use `yolo list-builds` instead.
