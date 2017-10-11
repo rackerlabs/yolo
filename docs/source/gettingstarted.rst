@@ -496,6 +496,13 @@ definitions in addition to the Lambda Function updates.
     for the same version. If you deploy from a version with multiple builds, ``yolo``
     will choose the most recent build according to its timestamp.
 
+You also have the ability to deploy a new version of your Lambda Function from a local build, without
+having to ``yolo push`` before deployment. It's useful for quick iterations.
+
+.. code-block:: bash
+
+    $ yolo deploy-lambda --service MyLambdaService --stage dev --from-local
+
 Deploy an S3 service
 ....................
 
