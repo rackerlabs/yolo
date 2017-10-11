@@ -274,7 +274,7 @@ class YoloClient(object):
                 # get account stack outputs
                 account_stack_outputs = self.get_account_outputs(
                     account_cfg.account_number,
-                    self.yolo_file.templates['account']['region']
+                    account_cfg.default_region,
                 )
             else:
                 account_stack_outputs = {}
@@ -1287,12 +1287,16 @@ class YoloClient(object):
 
         service_cfg = self.yolo_file.services[service]
         # Get the default parameters first, if available.
-        parameters = service_cfg['parameters']['stages'].get('default', [])
+        parameters = service_cfg['deploy']['parameters']['stages'].get(
+            'default', []
+        )
         # Convert the list to a dict, so that it can be easily overridden by
         # stage-specific parameters.
         parameters_dict = {p['name']: p for p in parameters}
         # Get the stage-specific parameters.
-        stage_parameters = service_cfg['parameters']['stages'].get(stage, [])
+        stage_parameters = service_cfg['deploy']['parameters']['stages'].get(
+            stage, []
+        )
         stage_parameters_dict = {p['name']: p for p in stage_parameters}
         # Override default parameters with any stage-specific ones.
         parameters_dict.update(stage_parameters_dict)

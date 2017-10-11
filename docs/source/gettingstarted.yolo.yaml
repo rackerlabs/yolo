@@ -1,0 +1,99 @@
+name: 'MyApplication'
+accounts:
+  - name: 'DevAccount'
+    account_number: '111222333444'
+    default_region: 'us-east-2'
+  - name: 'ProdAccount'
+    account_number: '444555666777'
+    default_region: 'us-east-1'
+stages:
+  default:
+    account: 'DevAccount'
+    region: 'us-east-2'
+  dev:
+    account: 'DevAccount'
+    region: 'us-east-2'
+  prod:
+    account: 'ProdAccount'
+    region: 'us-east-1'
+    protected: true
+templates:
+  account:
+    path: 'cloudformation/account'
+    params:
+      AccountParam1: 'foo'
+      AccountParam2: 'bar'
+  stage:
+    path: 'cloudformation/stage'
+    params:
+      StageParam1: 'baz'
+      StageParam2: 'qux'
+services:
+  MyLambdaService:
+    type: 'lambda-apigateway'
+    build:
+      working_dir: '.'
+      dist_dir: 'dist'
+      dependencies: 'requirements.txt'
+      include:
+        - 'myapplication/'
+        - 'my-swagger-api.yaml'
+        - 'lambda_main.py'
+    deploy:
+      apigateway:
+        rest_api_name: 'myapplication-api'
+        swagger_template: 'my-swagger-api.yaml'
+        domains:
+          - domain_name: '{{ stage.outputs.CustomDomain }}'
+            base_path: '/'
+        authorizers:
+          - name: 'auth_token'
+            type: 'TOKEN'
+            providerARNs: []
+            authType: 'token'
+            authorizerUri: ''
+            authorizerCredentials: '<IAM role ARN>'
+            identitySource: 'method.request.header.Authorization'
+            identityValidationExpression: '.*'
+            authorizerResultTtlInSeconds: 0
+        integration:
+          type: 'AWS'
+          uri: '<integration URI>'
+          passthroughBehavior: 'WHEN_NO_MATCH | NEVER | WHEN_NO_TEMPLATES'
+          credentials: '<IAM role ARN>'
+
+      lambda_function_configuration:
+        FunctionName: 'myapplication'
+        Role: '{{ stage.outputs.LambdaExecutionRoleArn }}'
+        Handler: 'lambda_main.lambda_handler'
+        Description: 'My Application'
+        Timeout: 30
+        Memory: 512
+        VpcConfig: {}
+        Runtime: 'python3.6'
+        TracingConfig:
+          Mode: 'Active'
+
+      parameters:
+        stages:
+          default:
+            - name: 'log_level'
+              value: 'debug'
+            - name: 'db_username'
+              value: 'admin'
+            - name: 'db_password'
+              value: 'password'
+            - name: 'ssl_private_key'
+              multiline: true
+          dev:
+            - name: 'log_level'
+              value: 'info'
+          prod:
+            - name: 'db_username'
+              value: 'prod-admin'
+            - name: 'db_password'
+            - name: 'log_level'
+              value: 'warn'
+  MyS3Service:
+    type: 's3'
+    bucket_name: 'my-hosting-s3-bucket'

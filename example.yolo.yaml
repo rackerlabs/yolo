@@ -59,111 +59,114 @@ services:
     # (some of them are still under development)
     type: 'lambda-apigateway'
     # Defines API Gateway specific behavior
-    apigateway:
-      # A list of base path mappings that will be put in place during the deploy
-      # step.
-      - custom_domain: "{{ stage.outputs.CustomDomain }}"
-        base_path: '/'
+    build:
+      working_dir: '.'
+      dependencies: 'requirements.txt'
+      include:
+        - 'myservice/'
+        - 'main.py'
+        - './gateway/my-api-v1.yml'
+      # Local directory containing files to be published to S3:
+      dist_dir: 'lambda_dist'
+    deploy:
+      apigateway:
         rest_api_name: 'MyServiceName'
-    # The primary mechanism to build and deploy Lambda functions is utlizing
-    # Yoke. This section contains settings that are passed on to it.
-    yoke:
-      # Location of the service's codebase, optional (defaults to the service
-      # name)
-      working_dir: 'services/MyServiceName'
-      # These environment variables are used to substitute variables in the
-      # yoke.yml files, and they will also be included in the config.json file
-      # bundled with the Lambda function.
-      environment:
-        # You can specify simple strings
-        API_VERSION: "1"
-        # There are some special template variables that are injected
-        BUILD_TIME: '{{ metadata.timestamp }}'
-        VERSION_HASH: '{{ metadata.version_hash }}'
-        # You can also wire up CloudFormation template outputs -- from the stage
-        # infrastructure
-        LAMBDA_EXECUTION_ROLE: '{{ stage.outputs.LambdaExecutionRole }}'
-        # Or even the account-level infrastructure
-        DEFAULT_SECURITY_GROUP: '{{ account.outputs.DefaultSecurityGroup }}'
-      # Specify a different stage name, if needed.
-      stage: 'myprefix_{{ stage.name }}'
-    # See https://boto3.readthedocs.io/en/latest/reference/services/lambda.html#Lambda.Client.update_function_configuration for more details about each parameter.
-    lambda_function_configuration:
-      # Required parameters:
-      FunctionName: 'MyService'
-      # Role: 'arn:aws:iam::111222333444:role/MyServiceInvocationRole'
-      # The ARN of the IAM role to use for executing the Lambda function.
-      # Typically, this will be referenced as an output of the stage stack:
-      Role: '{{ stage.outputs.LambdaExecutionRole }}'
-      # It's also possible to hardcode the ARN, like so:
-      # Role: 'arn:aws:iam::111222333444:role/MyServiceInvocationRole'
-      Handler: 'main.lambda_entrypoint'
-      # Optional parameters:
-      Description: ''
-      Timeout: 30
-      MemorySize: 256
-      VpcConfig:
-        SubnetIds:
-          - 'subnet-b38134e7'
-          - 'subnet-bf58110e'
-        SecurityGroupIds:
-          - 'sg-5675daf0'
-          - 'sg-8675309e'
-      Environment:
-        Variables:
-          key1: 'value1'
-          key2: 'value2'
-      Runtime: 'python3.6'
-      # X-Ray tracing config
-      TracingConfig:
-        # Choose 'Active' or 'PassThrough'
-        Mode: 'Active'
-    # Local directory containing files to be published to S3:
-    dist_path: 'services/MyServiceName/lambda'
-    # Specify the list of parameters (including secrets) which
-    # need to be stored for this service.
-    # This enables centralized parameter storage for a given service/stage.
-    # When a service is deployed to a stage, the stored parameters will be
-    # packaged up with the code and deployed.
-    parameters:
-      stages:
-        prod:
-          # Some config values can have a safe plain-text default.
-          # You can put it directly in the file here:
-          - name: 'db_username'
-            value: 'prod_admin'
-          # Some config values are secret and should not be stored in plain
-          # text.
-          # Omit a default value for these.
-          - name: 'db_password'
-          # Some config values may need to be multiline strings (such as
-          # certificates, private keys, etc.).
-          # For these, specify `multiline: true`.
-          - name: 'private_key'
-            multiline: true
-        dev:
-          - name: 'db_username'
-            value: 'dev_admin'
-          - name: 'db_password'
-          - name: 'private_key'
-            multiline: true
-        # If a stage is not explicitly declared here in this section,
-        # parameters from the `default` stage will be used. The parameters
-        # here are inherited by all other stages, so if they don't exist in
-        # stage-specific sections, they will be available as defined here.
-        default:
-          - name: 'db_username'
-            value: 'dev_admin'
-          - name: 'db_password'
-          - name: 'private_key'
-            multiline: true
-          - name: 'stage'
-            value: '{{ stage.name }}'
+        swagger_template: './gateway/my-api-v1.yml'
+
+        domains:
+          - domain_name: 'myservice.net'
+            base_path: '/'
+
+        authorizers:
+          - name: 'auth_token'
+            type: 'TOKEN'
+            providerARNs: []
+            authType: 'token'
+            authorizerUri: 'arn:aws:apigateway:us-east-1:lambda/path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:my_authorizer:MyService_{{ stage.name }}/invocations'
+            authorizerCredentials: 'arn:aws:iam::123456789012:role/MyService_{{ stage.name }}_APIGatewayInvoker'
+            identitySource: 'method.request.header.Authorization'
+            identityValidationExpression: '.*'
+            authorizerResultTtlInSeconds: 0
+
+        integration:
+          type: 'AWS'
+          uri: 'arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:123456789012:function:MyService:{{ stage.name }}/invocations'
+          passthroughBehavior: 'WHEN_NO_MATCH'
+          credentials: 'arn:aws:iam::123456789012:role/{{ stage.outputs.APIGatewayLambdaInvokeRole }}'
+
+      # See https://boto3.readthedocs.io/en/latest/reference/services/lambda.html#Lambda.Client.update_function_configuration for more details about each parameter.
+      lambda_function_configuration:
+        # Required parameters:
+        FunctionName: 'MyService'
+        # Role: 'arn:aws:iam::111222333444:role/MyServiceInvocationRole'
+        # The ARN of the IAM role to use for executing the Lambda function.
+        # Typically, this will be referenced as an output of the stage stack:
+        Role: '{{ stage.outputs.LambdaExecutionRole }}'
+        # It's also possible to hardcode the ARN, like so:
+        # Role: 'arn:aws:iam::111222333444:role/MyServiceInvocationRole'
+        Handler: 'main.lambda_entrypoint'
+        # Optional parameters:
+        Description: ''
+        Timeout: 30
+        MemorySize: 256
+        VpcConfig:
+          SubnetIds:
+            - 'subnet-b38134e7'
+            - 'subnet-bf58110e'
+          SecurityGroupIds:
+            - 'sg-5675daf0'
+            - 'sg-8675309e'
+        Environment:
+          Variables:
+            key1: 'value1'
+            key2: 'value2'
+        Runtime: 'python3.6'
+        # X-Ray tracing config
+        TracingConfig:
+          # Choose 'Active' or 'PassThrough'
+          Mode: 'Active'
+      # Specify the list of parameters (including secrets) which
+      # need to be stored for this service.
+      # This enables centralized parameter storage for a given service/stage.
+      # When a service is deployed to a stage, the stored parameters will be
+      # packaged up with the code and deployed.
+      parameters:
+        stages:
+          prod:
+            # Some config values can have a safe plain-text default.
+            # You can put it directly in the file here:
+            - name: 'db_username'
+              value: 'prod_admin'
+            # Some config values are secret and should not be stored in plain
+            # text.
+            # Omit a default value for these.
+            - name: 'db_password'
+            # Some config values may need to be multiline strings (such as
+            # certificates, private keys, etc.).
+            # For these, specify `multiline: true`.
+            - name: 'private_key'
+              multiline: true
+          dev:
+            - name: 'db_username'
+              value: 'dev_admin'
+            - name: 'db_password'
+            - name: 'private_key'
+              multiline: true
+          # If a stage is not explicitly declared here in this section,
+          # parameters from the `default` stage will be used.
+          default:
+            - name: 'db_username'
+              value: 'dev_admin'
+            - name: 'db_password'
+            - name: 'private_key'
+              multiline: true
   MyUIService:
     type: 's3'
     # Destination bucket where published files are to be stored:
     # This can be value defined here, or it could be the output of the stage
     # CloudFormation stack.
     bucket_name: '{{ stage.name }}-MyUIService-bucket'
-    # Local directory containing files to be published to S3:
-    dist_path: 'dist'
+    build:
+      working_dir: '.'
+      # Local directory containing files to be published to S3:
+      dist_dir: 's3_dist'
