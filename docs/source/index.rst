@@ -7,7 +7,7 @@ Welcome to yolo's documentation!
 ================================
 
 ``yolo`` is a command line build/deployment tool for managing complete application stacks
-on AWS infrastructure. ``yolo`` can deploy entire services (infrastructre and code)
+on AWS infrastructure. ``yolo`` can deploy entire services (infrastructure and code)
 with just a few commands. The following are supported:
 
 - infrastructure deployments based on CloudFormation templates
