@@ -109,9 +109,6 @@ class LambdaService(yolo.services.BaseService):
             os.path.abspath(service_cfg['build']['dist_dir']),
             'lambda_function.zip'
         )
-        swagger_yaml_path = service_cfg['deploy']['apigateway'][
-            'swagger_template'
-        ]
 
         bucket.upload_file(
             Filename=lambda_fn_path,
@@ -123,10 +120,12 @@ class LambdaService(yolo.services.BaseService):
         if service_cfg['type'] == (
                 yolo_file.YoloFile.SERVICE_TYPE_LAMBDA_APIGATEWAY
         ):
+            gateway_config = service_cfg['deploy']['apigateway']
+
             # grab the rendered swagger file from the working_dir
             # and upload it to the S3 bucket
             bucket.upload_file(
-                Filename=swagger_yaml_path,
+                Filename=gateway_config['swagger_template'],
                 Key=os.path.join(bucket_folder_prefix, const.SWAGGER_YAML),
                 ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
             )
