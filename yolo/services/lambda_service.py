@@ -18,7 +18,7 @@ import tempfile
 
 import botocore.exceptions
 import tabulate
-import yaml
+from ruamel import yaml
 
 import yolo.build
 import yolo.client
@@ -753,13 +753,60 @@ class LambdaService(yolo.services.BaseService):
             region_name=self.context.stage.region,
         )
 
+        # FIXME(larsbutler): This is workaround for what appears to be an API
+        # Gateway bug: If you create/update rest API with the contents of a
+        # Swagger file with does not define an Authorizer in it's entirety
+        # (including the x-amazon-apigateway-* directives), if you fill in the
+        # blanks later using apigateway:CreateAuthorizer, it doesn't work the
+        # way you'd expect--and it leaves you without authorizers on your
+        # endpoints! :(
+        # To work around this, inject the Authorizer details from the yolo.yaml
+        # file at deploy time into the Swagger contents when creating/updating
+        # the REST API.
+        # h4x:
+        swagger_obj = yaml.safe_load(swagger_contents)
+        if 'securityDefinitions' not in swagger_obj:
+            # No securityDefinitions are in the initial swagger file.
+            swagger_obj['securityDefinitions'] = {}
+        for authorizer in service_cfg['deploy']['apigateway']['authorizers']:
+            authr_name = authorizer.pop('name')
+            authr_type = authorizer.pop('authType')
+            if 'providerARNs' in authorizer:
+                # providerARNs isn't allowed in this Swagger section.
+                # Probably we don't even need this in most cases. *shrug*
+                authorizer.pop('providerARNs')
+            if 'identitySource' in authorizer:
+                # This is also not required in the Swagger apig section.
+                authorizer.pop('identitySource')
+
+            if authr_name not in swagger_obj['securityDefinitions']:
+                LOG.warning(
+                    'Authorizer %s not found in Swagger template. Skipping...',
+                    authr_name
+                )
+                continue
+
+            swagger_obj['securityDefinitions'][
+                authr_name
+            ]['x-amazon-apigateway-authtype'] = authr_type
+            swagger_obj['securityDefinitions'][
+                authr_name
+            ]['x-amazon-apigateway-authorizer'] = authorizer
+            # Replace the amended swagger contents before uploading:
+            swagger_contents = yaml.dump(
+                swagger_obj, Dumper=yaml.RoundTripDumper
+            )
+        # /h4x
+
         rest_api_name = apig_config['rest_api_name']
         rest_api_id = self._create_or_update_rest_api(
             apig_client, rest_api_name, swagger_contents
         )
 
         # Set up authorizers:
-        self._deploy_api_authorizers(apig_client, rest_api_id, service_cfg)
+        # FIXME(larsbutler): Keep this disabled until another alternative
+        # to the above h4x is found.
+        # self._deploy_api_authorizers(apig_client, rest_api_id, service_cfg)
 
         # Set up integrations (request/response templates):
         self._deploy_api_integrations(apig_client, rest_api_id, service_cfg,
