@@ -1,21 +1,16 @@
 import hashlib
+from io import BytesIO
 import logging
 import os
 import time
 
 import docker
 
+from yolo import dockerfiles
 from yolo import utils
 
 LOG = logging.getLogger(__name__)
 
-# On docker hub: https://hub.docker.com/r/larsbutler/yolo/
-BUILD_IMAGE = 'larsbutler/yolo:python'
-PYTHON_VERSION_MAP = {
-    # cp27-mu is compiled with ucs4 support which is the same as Lambda
-    'python2.7': 'cp27-cp27mu',
-    'python3.6': 'cp36-cp36m',
-}
 CONTAINER_POLL_INTERVAL = 10
 FEEDBACK_IN_SECONDS = 60
 STATUS_EXITED = 'exited'
@@ -43,47 +38,48 @@ def python_build_lambda_function(service_cfg):
         dependencies_sha1 = hashlib.sha1(fp.read().encode('utf-8')).hexdigest()
 
     environment = {
+        'DEPENDENCIES_SHA': dependencies_sha1,
         'INCLUDE': ' '.join(include),
-        # TODO: deal wtih this
-        # 'EXTRA_PACKAGES': '',
-        'PY_VERSION': PYTHON_VERSION_MAP[runtime],
         'VERSION_HASH': utils.get_version_hash(),
         'BUILD_TIME': utils.now_timestamp(),
     }
     # TODO(larsbutler): make these file/dir names constants
     build_cache_dir = os.path.join(working_dir, '.yolo_build_cache')
     build_cache_version_file = os.path.join(
-        build_cache_dir, 'cache_version.sha1'
+        build_cache_dir, '{}.zip'.format(dependencies_sha1)
     )
 
     LOG.warning('Checking dependencies cache...')
-    # Decide if we need to rebuild dependencies based on cache contents:
+    # Decide if we need to rebuild dependencies based on cache content:
     if os.path.isfile(build_cache_version_file):
-        # Check the current cache version
-        with open(build_cache_version_file) as fp:
-            build_cache_version = fp.read().strip()
-        LOG.warning('Existing build cache version is %s', build_cache_version)
-
-        if dependencies_sha1 != build_cache_version:
-            # We must rebuild:
-            LOG.warning(
-                'Build cache version mismatch. Rebuilding dependencies.'
-            )
-            environment['REBUILD_DEPENDENCIES'] = '1'
+        # Cached dependency archive was found, no need to rebuild.
+        LOG.warning('Existing build cache version is %s', dependencies_sha1)
     else:
         # No cache found; we must build deps.
+        LOG.warning('Build cache version mismatch or not found. '
+                    'Rebuilding dependencies.')
         environment['REBUILD_DEPENDENCIES'] = '1'
 
+    docker_file = BytesIO(dockerfiles.PYTHON_DOCKERFILE.encode('ascii'))
+    image = client.images.build(
+        fileobj=docker_file,
+        tag='yolobuilder',
+        buildargs={
+            'python_version': runtime.replace('.', ''),
+            # TODO: deal wtih this
+            # 'extra_packages': '',
+        },
+    )
+
     container = client.containers.run(
-        image=BUILD_IMAGE,
-        # command='/bin/bash -c "./build_wheels.sh"',
+        image=image.tags[0],
         detach=True,
         environment=environment,
         volumes={
             working_dir: {'bind': '/src'},
-            dependencies_path: {'bind': '/dependencies/requirements.txt'},
             dist_dir: {'bind': '/dist'},
             build_cache_dir: {'bind': '/build_cache'},
+            dependencies_path: {'bind': '/dependencies/requirements.txt'},
         },
     )
     LOG.warning(
