@@ -743,6 +743,23 @@ class YoloClient(object):
                 raise YoloError(err)
             else:
                 raise YoloError(err)
+        except yolo.exceptions.CloudFormationError:
+            possible_cause = 'unknown'
+            stack_events = cf_client.describe_stack_events(
+                StackName=stack_name
+            ).get('StackEvents', [])
+            for stack_event in stack_events:
+                if 'ResourceStatusReason' in stack_event:
+                    # Find the first error and report it.
+                    possible_cause = stack_event['ResourceStatusReason']
+                    # It may not be the root cause.
+                    break
+
+            raise YoloError(
+                'Infrastructure template failed to deploy. '
+                'Possible cause: "{}"\nCheck the CloudFormation dashboard '
+                'for more details.'.format(possible_cause)
+            )
 
     def show_config(self):
         print('Rackspace user: {}'.format(self.rax_username))
