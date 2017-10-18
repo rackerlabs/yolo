@@ -110,12 +110,14 @@ class FAWSClient(object):
                 raise
 
     def _get(self, path):
-        response = requests.get(
+        """
+        :param str path:
+            Request path. For example, /foo/bar (without the host).
+        """
+        return requests.get(
             self.FAWS_API_ENDPOINT + path,
             headers=self.request_headers,
         )
-        response.raise_for_status()
-        return response.json()
 
     def _post(self, path, body):
         """
@@ -124,22 +126,35 @@ class FAWSClient(object):
         :param dict body:
             JSON/Dict contents to send with the POST.
         """
-        response = requests.post(
+        return requests.post(
             self.FAWS_API_ENDPOINT + path,
             json=body,
             headers=self.request_headers,
         )
-        response.raise_for_status()
-        return response.json()
 
     def get_aws_account_credentials(self, aws_account_number, duration=3600):
         """Get temporary AWS account credentials."""
         path = '/v0/awsAccounts/{}/credentials'.format(aws_account_number)
         body = dict(credential=dict(duration=duration))
-        return self._post(path, body)
+        response = self._post(path, body)
+        # We only need to explicitly handle 404s. Since yolo caches credentials
+        # for talking to the FAWS API, it's possible the user might have the
+        # wrong credentials cached (perhaps for another account).
+        if response.status_code == 404:
+            raise yolo.exceptions.YoloError(
+                'Unknown account "{acct}" for username "{username}".\n'
+                'Options:\n'
+                '  - Verify the account number (`yolo list-accounts`).\n'
+                '  - Log in with different credentials (`yolo login`).'.format(
+                    acct=aws_account_number, username=self.username
+                )
+            )
+        return response.json()
 
     def list_aws_accounts(self):
-        return self._get('/v0/awsAccounts')
+        response = self._get('/v0/awsAccounts')
+        response.raise_for_status()
+        return response.json()
 
     def boto3_session(self, acct_num):
         session = self._boto3_sessions.get(acct_num)
