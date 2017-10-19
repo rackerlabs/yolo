@@ -153,6 +153,14 @@ def login():
     client.YoloClient().login()
 
 
+@cli.command(name='use-profile')
+@click.option('--profile-name', metavar='PROFILE_NAME')
+@handle_yolo_errors
+def use_profile(profile_name):
+    """Make Yolo use an AWS CLI named profile."""
+    client.YoloClient().use_profile(profile_name)
+
+
 @cli.command(name='list-accounts')
 @handle_yolo_errors
 def list_accounts():
