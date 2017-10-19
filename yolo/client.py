@@ -308,12 +308,13 @@ class YoloClient(object):
                 # get account stack outputs
                 account_stack_outputs = self.get_account_outputs(
                     account_cfg.account_number,
-                    self.yolo_file.templates['account']['region']
+                    account_cfg.default_region,
                 )
                 account_context = utils.DottedDict(
                     name=account_cfg.name,
                     account_number=account_cfg.account_number,
                     outputs=account_stack_outputs,
+                    default_region=account_cfg.default_region,
                 )
                 context['account'] = account_context
 
@@ -915,7 +916,7 @@ class YoloClient(object):
             means that we block and wait for the stack create/update to finish
             before returning.
         """
-        region = self.yolo_file.templates['account']['region']
+        region = self.context.account.default_region
         bucket_folder_prefix = (
             const.BUCKET_FOLDER_PREFIXES['account-templates'].format(
                 timestamp=self.now_timestamp
