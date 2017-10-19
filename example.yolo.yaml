@@ -5,8 +5,12 @@ name: 'MyApplicationName'
 accounts:
   - name: 'mydev'
     account_number: '111222333444'
+    # The region where the base infrastructure and some Yolo-specific artifacts
+    # will be deployed.
+    default_region: 'us-west-2'
   - name: 'myprod'
     account_number: '555666777888'
+    default_region: 'us-west-2'
 
 templates:
   # Templates for account-specific infrastructure.
@@ -17,8 +21,6 @@ templates:
     path: 'cloudformation/account'
     params:
       AccountName: '{{ account.name }}'
-    # The region for this base infrastructure to be deployed.
-    region: 'us-west-2'
   # Templates for stage-specific infrastructure.
   stage:
     # Relative or absolute path to a directory containing CloudFormation
