@@ -4,6 +4,8 @@ Manage infrastructure and services on AWS for multiple accounts/stages.
 
 (Or, "yolo everything into prod.")
 
+[![Documentation Status](https://readthedocs.org/projects/yolocli/badge/?version=latest)](http://yolocli.readthedocs.io/en/latest/?badge=latest)
+
 ## Terminology
 
  * __Project:__ a collection of services, the code repository represents a project.
@@ -31,7 +33,7 @@ yolo login
  3. Deploy the baseline infrastructure:
 
 ```
-yolo deploy-baseline-infra --account testaccount
+yolo deploy-infra --account testaccount
 ```
 
  4. Define stage-level resources using a different CloudFormation template. There can be multiple stages within a single account (they will be deployed as separate CloudFormation stacks), and a stage represents an instance of your project (collection of services).
@@ -83,4 +85,5 @@ Commands:
   show-service           Show service configuration for a given stage.
   status                 Show infrastructure deployments status.
   upload-s3              DEPRECATED: Use `yolo push` instead.
+  use-profile            Make Yolo use an AWS CLI named profile.
 ```

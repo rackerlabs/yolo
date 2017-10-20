@@ -18,6 +18,7 @@ YOLO_YAML = 'yolo.yaml'
 DEFAULT_FILENAMES = [YOLO_YAML, 'yolo.yml']
 RACKSPACE_USERNAME = 'RACKSPACE_USERNAME'
 RACKSPACE_API_KEY = 'RACKSPACE_API_KEY'
+AWS_PROFILE_NAME = 'AWS_PROFILE_NAME'
 NAMESPACE = 'yolo'
 SWAGGER_YAML = 'swagger.yaml'
 # FAWS account service level IDs and their respective human-readable labels.

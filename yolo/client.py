@@ -40,6 +40,7 @@ import tabulate
 
 from yolo.cloudformation import CloudFormation
 from yolo import const
+from yolo.credentials.aws_cli import AWSCLICredentials
 import yolo.exceptions
 from yolo.exceptions import NoInfrastructureError
 from yolo.exceptions import StackDoesNotExist
@@ -94,6 +95,9 @@ class YoloClient(object):
         self._rax_username = None
         self._rax_api_key = None
 
+        # AWS CLI named profile
+        self._aws_profile_name = None
+
         self._version_hash = None
 
         # This will get populated when the ``yolo_file`` is read and the basic
@@ -131,6 +135,18 @@ class YoloClient(object):
         return self._rax_api_key
 
     @property
+    def aws_profile_name(self):
+        if self._aws_profile_name is None:
+            self._aws_profile_name = (
+                os.getenv(const.AWS_PROFILE_NAME) or
+                keyring.get_password(const.NAMESPACE, 'aws_profile_name')
+            )
+
+        # We can allow this value to be None, because in that case we'll
+        # fallback to FAWS credentials.
+        return self._aws_profile_name
+
+    @property
     def context(self):
         """Environment context for commands and template rendering."""
         if self._context is None:
@@ -148,9 +164,17 @@ class YoloClient(object):
     def faws_client(self):
         """Lazily instantiate a FAWS client."""
         if self._faws_client is None:
-            self._faws_client = faws_client.FAWSClient(
-                self.rax_username, self.rax_api_key
-            )
+            # NOTE(szilveszter): This is just a quick hack, because I wanted
+            # to avoid refactoring everything. If this ends up being a good
+            # approach, I'm happy to do the work.
+            # If we have a profile stored, let's use it instead of going to
+            # FAWS first.
+            if self.aws_profile_name:
+                self._faws_client = AWSCLICredentials(self.aws_profile_name)
+            else:
+                self._faws_client = faws_client.FAWSClient(
+                    self.rax_username, self.rax_api_key
+                )
 
         return self._faws_client
 
@@ -747,10 +771,12 @@ class YoloClient(object):
 
     def show_config(self):
         print('Rackspace user: {}'.format(self.rax_username))
+        print('AWS CLI named profile: {}'.format(self.aws_profile_name))
 
     def clear_config(self):
         keyring.delete_password(const.NAMESPACE, 'rackspace_username')
         keyring.delete_password(const.NAMESPACE, 'rackspace_api_key')
+        keyring.delete_password(const.NAMESPACE, 'aws_profile_name')
 
     def login(self):
         # Get RACKSPACE_USERNAME and RACKSPACE_API_KEY envvars
@@ -770,6 +796,19 @@ class YoloClient(object):
             const.NAMESPACE, 'rackspace_api_key', self.rax_api_key
         )
         print('login successful!')
+
+    def use_profile(self, profile_name):
+        if profile_name is None:
+            # NOTE(szilveszter): At some point we could read the profiles from
+            # the credentials files, and we could ask the user to choose one.
+            raise YoloError(
+                "Please specify a profile with the '--profile-name' option."
+            )
+
+        self._aws_profile_name = profile_name
+        keyring.set_password(
+            const.NAMESPACE, 'aws_profile_name', self.aws_profile_name
+        )
 
     def list_accounts(self):
         accounts = self.faws_client.list_aws_accounts()
