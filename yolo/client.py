@@ -1258,6 +1258,32 @@ class YoloClient(object):
         sp.wait()
 
     def show_parameters(self, service, stage):
+        params = self._get_ssm_parameters(service, stage)
+
+        # NOTE(larsbutler, 5-Sep-2017): Multiline config items (like certs,
+        # private keys, etc.) won't get displayed properly unless you use the
+        # latest trunk version of python-tabulate. It does still have some
+        # issues with exact spacing of outputs, but at least it works to
+        # display things properly.
+        headers = ['Name', 'Value']
+        table = [headers]
+        for param_name in sorted(params.keys()):
+            # Show params in the table in alphabetical order.
+            table.append((param_name, params[param_name]))
+
+        print(tabulate.tabulate(table, headers='firstrow'))
+        # NOTE(larsbutler, 6-Sep-2017): If a parameter is removed from the
+        # yolofile, it will still be in SSM. Probably the best/safest way to
+        # handle the cleanup is for someone to manually remove it. Yolo could
+        # help here by showing a warning when we encounter parameters in SSM
+        # that aren't in the yolofile.
+
+    def _get_ssm_parameters(self, service, stage, param_names=None):
+        """Fetch stored parameters in SSM for a given service/stage.
+
+        :returns:
+            `dict` of param name/param value key/value pairs.
+        """
         self.set_up_yolofile_context(stage=stage)
         self._yolo_file = self.yolo_file.render(**self.context)
 
@@ -1275,24 +1301,20 @@ class YoloClient(object):
         results = ssm_client.get_parameters_by_path(
             Path=param_path, WithDecryption=True
         )
-        headers = ['Name', 'Value']
-        table = [headers]
 
-        # NOTE(larsbutler, 5-Sep-2017): Multiline config items (like certs,
-        # private keys, etc.) won't get displayed properly unless you use the
-        # latest trunk version of python-tabulate. It does still have some
-        # issues with exact spacing of outputs, but at least it works to
-        # display things properly.
+        params = {}
         for param in results['Parameters']:
-            table.append((param['Name'].split(param_path)[1], param['Value']))
-        print(tabulate.tabulate(table, headers='firstrow'))
-        # NOTE(larsbutler, 6-Sep-2017): If a parameter is removed from the
-        # yolofile, it will still be in SSM. Probably the best/safest way to
-        # handle the cleanup is for someone to manually remove it. Yolo could
-        # help here by showing a warning when we encounter parameters in SSM
-        # that aren't in the yolofile.
+            param_name = param['Name'].split(param_path)[1]
+            params[param_name] = param['Value']
+        return params
 
-    def put_parameters(self, service, stage, param=None, use_defaults=False):
+    def put_parameters(self, service, stage, param=None, use_defaults=False,
+                       copy_from_stage=None):
+        copied_params = {}
+        if copy_from_stage is not None:
+            # Try to copy parameters from another stage.
+            copied_params = self._get_ssm_parameters(service, copy_from_stage)
+
         if param is None:
             param = tuple()
 
@@ -1343,18 +1365,30 @@ class YoloClient(object):
             self.context.stage.region,
         )
 
+        # Precedence for setting params:
+        #   - copy from target stage (if applicable)
+        #   - use default (if available)
+        #   - prompt for value
         for param_item in parameters:
             param_name = param_item['name']
             param_value = None
 
-            # If explicit param names were listed by the user and use_defaults
-            # is set:
-            if param is not None and use_defaults:
+            # If --copy-from-stage option was specified:
+            if copy_from_stage is not None:
+                if param_name in copied_params:
+                    # Maybe we can get the value from the copied params.
+                    param_value = copied_params[param_name]
+            # If --use-defaults is set:
+            elif use_defaults:
                 # Look for a default value from the yolo.yml. There might not
                 # be one.
                 param_value = param_item.get('value')
 
+            # We couldn't get a value for the param from either another stage
+            # or
             if param_value is None:
+                # If it's a multiline param, use an appropriate multiline
+                # prompt.
                 if param_item.get('multiline', False):
                     # Multiline entry:
                     print(
@@ -1364,14 +1398,13 @@ class YoloClient(object):
                     )
                     param_value = sys.stdin.read()
                 else:
-                    # Single line entry:
+                    # Otherwise, just get a single line entry using non-echoing
+                    # input.
                     param_value = getpass.getpass(
                         'Enter "{}" value: '.format(param_name)
                     )
-            else:
-                print(
-                    'Setting "{}" to "{}"'.format(param_name, param_value)
-                )
+
+            print('Setting parameter "{}"...'.format(param_name))
 
             param_name = '/{service}/{stage}/latest/{key}'.format(
                 service=service,

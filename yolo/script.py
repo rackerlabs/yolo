@@ -346,6 +346,16 @@ def show_parameters(yolo_file=None, **kwargs):
         'times.'
     ),
 )
+@click.option(
+    '--copy-from-stage',
+    '-c',
+    metavar='STAGE',
+    required=False,
+    help=(
+        'If possible, copy parameters from this stage. This can be used in '
+        'conjunction with `--param` to copy explicit sets of parameters.'
+    )
+)
 @yolo_file_option()
 @handle_yolo_errors
 def put_parameters(yolo_file=None, **kwargs):
