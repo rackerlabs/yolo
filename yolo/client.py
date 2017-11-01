@@ -436,8 +436,8 @@ class YoloClient(object):
         :returns:
             :class:`boto3.resources.factory.s3.Bucket` instance.
         """
-        s3_client = self.faws_client.boto3_session(acct_num).client(
-            's3', region_name=region
+        s3_client = self.faws_client.aws_client(
+            acct_num, 's3', region_name=region
         )
         try:
             print('checking for bucket {}...'.format(bucket_name))
@@ -1080,9 +1080,8 @@ class YoloClient(object):
                 ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
             )
 
-        cf_client = self.faws_client.boto3_session(
-            self.context.account.account_number
-        ).client(
+        cf_client = self.faws_client.aws_client(
+            self.context.account.account_number,
             'cloudformation',
             region_name=region,
         )
