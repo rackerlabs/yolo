@@ -51,7 +51,7 @@ config = dict(
     install_requires=[
         'awscli',
         'boto3',
-        'botocore',
+        'botocore>=1.7.18',
         'click',
         'docker',
         'jinja2',
