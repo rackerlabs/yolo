@@ -1,5 +1,11 @@
 # Changes
 
+## 0.3.1 (3-Nov-2017)
+
+- Pin `botocore` dependency to a min version of 1.7.18. This is required for
+  stack termination protection
+  (see https://aws.amazon.com/about-aws/whats-new/2017/09/aws-cloudformation-provides-stack-termination-protection/).
+
 ## 0.3.0 (3-Nov-2017)
 
 - Add `--copy-from-stage` option to `yolo put-parameters`. Allows generic
