@@ -140,7 +140,7 @@ class YoloFile(object):
         volup.Optional('integration'): {
             volup.Required('type'): STRING_SCHEMA,
             volup.Required('uri'): STRING_SCHEMA,
-            volup.Required('passthroughBehavior'): STRING_SCHEMA,
+            volup.Optional('passthroughBehavior'): STRING_SCHEMA,
             volup.Optional('credentials'): STRING_SCHEMA,
         },
     })

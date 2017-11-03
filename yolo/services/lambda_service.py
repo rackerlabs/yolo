@@ -768,7 +768,7 @@ class LambdaService(yolo.services.BaseService):
         if 'securityDefinitions' not in swagger_obj:
             # No securityDefinitions are in the initial swagger file.
             swagger_obj['securityDefinitions'] = {}
-        for authorizer in service_cfg['deploy']['apigateway']['authorizers']:
+        for authorizer in apig_config.get('authorizers', []):
             authr_name = authorizer.pop('name')
             authr_type = authorizer.pop('authType')
             if 'providerARNs' in authorizer:

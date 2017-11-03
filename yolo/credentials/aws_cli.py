@@ -20,5 +20,8 @@ class AWSCLICredentials(object):
 
         return janus_style_creds
 
+    def boto3_session(self, acct_num):
+        return self.session
+
     def aws_client(self, acct_num, aws_service, region_name=None, **kwargs):
         return self.session.client(aws_service, region_name=region_name, **kwargs)
