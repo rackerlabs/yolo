@@ -116,7 +116,13 @@ class S3Service(yolo.services.BaseService):
         sp_env = os.environ.copy()
         sp_env.update(cred_vars)
         sp = subprocess.Popen(sync_args, env=sp_env)
-        sp.wait()
+        return_code = sp.wait()
+        if return_code != 0:
+            raise yolo.exceptions.YoloError(
+                'Push to S3 failed, using command:\n{}'.format(
+                    ' '.join(sync_args)
+                )
+            )
 
         # Upload the yolo.yaml file to assist with deploying the build later:
         bucket.upload_fileobj(
@@ -216,4 +222,10 @@ class S3Service(yolo.services.BaseService):
         sp_env = os.environ.copy()
         sp_env.update(cred_vars)
         sp = subprocess.Popen(sync_args, env=sp_env)
-        sp.wait()
+        return_code = sp.wait()
+        if return_code != 0:
+            raise yolo.exceptions.YoloError(
+                'Deploy to S3 failed, using command:\n{}'.format(
+                    ' '.join(sync_args)
+                )
+            )
