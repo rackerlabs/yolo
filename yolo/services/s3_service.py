@@ -77,8 +77,9 @@ class S3Service(yolo.services.BaseService):
         cred_vars = dict(
             AWS_ACCESS_KEY_ID=cred['accessKeyId'],
             AWS_SECRET_ACCESS_KEY=cred['secretAccessKey'],
-            AWS_SESSION_TOKEN=cred['sessionToken'],
         )
+        if 'sessionToken' in cred:
+            cred_vars['AWS_SESSION_TOKEN'] = cred['sessionToken']
 
         version_hash = utils.get_version_hash()
         bucket_folder_prefix = const.BUCKET_FOLDER_PREFIXES['stage-build'].format(
