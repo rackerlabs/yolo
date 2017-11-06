@@ -77,8 +77,9 @@ class S3Service(yolo.services.BaseService):
         cred_vars = dict(
             AWS_ACCESS_KEY_ID=cred['accessKeyId'],
             AWS_SECRET_ACCESS_KEY=cred['secretAccessKey'],
-            AWS_SESSION_TOKEN=cred['sessionToken'],
         )
+        if 'sessionToken' in cred:
+            cred_vars['AWS_SESSION_TOKEN'] = cred['sessionToken']
 
         version_hash = utils.get_version_hash()
         bucket_folder_prefix = const.BUCKET_FOLDER_PREFIXES['stage-build'].format(
@@ -89,7 +90,7 @@ class S3Service(yolo.services.BaseService):
         )
 
         # upload all of the other files associated with the build:
-        source_path = os.path.abspath(service_cfg['dist_path'])
+        source_path = os.path.abspath(service_cfg['build']['dist_dir'])
         dest_path = 's3://{bucket_name}/{folder_prefix}'.format(
             bucket_name=bucket.name,
             folder_prefix=bucket_folder_prefix,
@@ -115,7 +116,13 @@ class S3Service(yolo.services.BaseService):
         sp_env = os.environ.copy()
         sp_env.update(cred_vars)
         sp = subprocess.Popen(sync_args, env=sp_env)
-        sp.wait()
+        return_code = sp.wait()
+        if return_code != 0:
+            raise yolo.exceptions.YoloError(
+                'Push to S3 failed, using command:\n{}'.format(
+                    ' '.join(sync_args)
+                )
+            )
 
         # Upload the yolo.yaml file to assist with deploying the build later:
         bucket.upload_fileobj(
@@ -154,8 +161,9 @@ class S3Service(yolo.services.BaseService):
         cred_vars = dict(
             AWS_ACCESS_KEY_ID=cred['accessKeyId'],
             AWS_SECRET_ACCESS_KEY=cred['secretAccessKey'],
-            AWS_SESSION_TOKEN=cred['sessionToken'],
         )
+        if 'sessionToken' in cred:
+            cred_vars['AWS_SESSION_TOKEN'] = cred['sessionToken']
 
         service_cfg = self.yolo_file.services[service]
         # NOTE(larsbutler): The infrastructure templates need to create this
@@ -214,4 +222,10 @@ class S3Service(yolo.services.BaseService):
         sp_env = os.environ.copy()
         sp_env.update(cred_vars)
         sp = subprocess.Popen(sync_args, env=sp_env)
-        sp.wait()
+        return_code = sp.wait()
+        if return_code != 0:
+            raise yolo.exceptions.YoloError(
+                'Deploy to S3 failed, using command:\n{}'.format(
+                    ' '.join(sync_args)
+                )
+            )

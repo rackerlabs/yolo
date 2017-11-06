@@ -18,7 +18,7 @@ class AWSCLICredentials(object):
         if creds.token:
             janus_style_creds['sessionToken'] = creds.token
 
-        return janus_style_creds
+        return {'credential': janus_style_creds}
 
     def boto3_session(self, acct_num):
         return self.session
