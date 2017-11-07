@@ -911,22 +911,35 @@ class LambdaService(yolo.services.BaseService):
                     )[1]
                 else:
                     resource_path = resource['path']
-                relevant_resp_codes = swagger_data['paths'][resource_path].get(
-                    method.lower()
-                ).get('responses').keys()
+                try:
+                    relevant_resp_codes = swagger_data['paths'][resource_path].get(
+                        method.lower()
+                    ).get('responses').keys()
+                except AttributeError:
+                    continue
                 # loop through these status codes and get the default response
                 # template, then set up the integration response:
-                for resp_code in relevant_resp_codes:
-                    resp_integration = DEFAULT_INTEGRATION_RESPONSES.get(
-                        str(resp_code),
-                        DEFAULT_INTEGRATION_RESPONSES['default'],
-                    )
-                    apig_client.put_integration_response(
-                        restApiId=rest_api_id,
-                        resourceId=resource['id'],
-                        httpMethod=method,
-                        **resp_integration
-                    )
+                if relevant_resp_codes:
+                    for resp_code in relevant_resp_codes:
+                        resp_integration = DEFAULT_INTEGRATION_RESPONSES.get(
+                            str(resp_code),
+                            DEFAULT_INTEGRATION_RESPONSES['default'],
+                        )
+                        apig_client.put_integration_response(
+                            restApiId=rest_api_id,
+                            resourceId=resource['id'],
+                            httpMethod=method,
+                            **resp_integration
+                        )
+                else:
+                    # Handle proxy
+                    if method is 'ANY':
+                        apig_client.put_integration_response(
+                            restApiId=rest_api_id,
+                            resourceId=resource['id'],
+                            httpMethod='POST',
+                            **resp_integration
+                        )
 
     def _get_api_resources(self, apig_client, rest_api_id):
         """Get all resource defintions for a given REST API."""
