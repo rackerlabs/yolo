@@ -87,3 +87,16 @@ Commands:
   upload-s3              DEPRECATED: Use `yolo push` instead.
   use-profile            Make Yolo use an AWS CLI named profile.
 ```
+
+## Publishing to PyPI
+
+NOTE(larsbutler): This is more for my benefit than anyone else's, since I can
+never remember the exact incantations to publish to PyPI for some reason. :)
+
+Testing a release:
+
+    $ python setup.py sdist upload --repository https://test.pypi.org/legacy/
+
+Make the actual release:
+
+    $ python setup.py sdist upload --repository https://upload.pypi.org/legacy/
