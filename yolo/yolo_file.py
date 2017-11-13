@@ -56,7 +56,7 @@ class YoloFile(object):
     })
     TEMPLATES_SCHEMA = volup.Schema({
         volup.Optional('account'): ACCOUNT_TEMPLATE_SCHEMA,
-        volup.Required('stage'): STAGE_TEMPLATE_SCHEMA,
+        volup.Optional('stage'): STAGE_TEMPLATE_SCHEMA,
     })
     # 'stages' section
     STAGES_SCHEMA = volup.Schema({
