@@ -109,6 +109,10 @@ The templates section has two sub-sections: ``account`` and ``stage``:
 - ``params`` are input parameters to the respective template. If your templates
   do not require any parameters, enter ``params: {}``.
 
+If you don't use any CloudFormation templates to stand up your infrastucture,
+you still have to define the ``templates`` section, but you can leave it empty:
+``templates: {}``.
+
 .. _yolo_yaml_services:
 
 ``services`` section
