@@ -307,6 +307,7 @@ class YoloClient(object):
                 name=account_cfg.name,
                 account_number=account_cfg.account_number,
                 outputs=account_stack_outputs,
+                default_region=account_cfg.default_region,
             )
 
             # get stage stack outputs
@@ -1508,7 +1509,7 @@ class YoloClient(object):
         elif with_account:
             outputs = self.get_account_outputs(
                 self.context.account.account_number,
-                self.context.stage.region,
+                self.context.account.default_region,
             )
         table = [('Name', 'Value')]
         for output in sorted(outputs.items()):
