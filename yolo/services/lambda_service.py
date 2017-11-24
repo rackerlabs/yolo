@@ -1086,7 +1086,7 @@ class LambdaService(yolo.services.BaseService):
             'lambda',
             region_name=self.context.stage.region,
         )
-        func_name = self.yolo_file.services[service][
+        func_name = self.yolo_file.services[service]['deploy'][
             'lambda_function_configuration'
         ]['FunctionName']
         func_config = lambda_client.get_function(
