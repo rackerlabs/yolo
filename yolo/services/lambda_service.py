@@ -771,7 +771,10 @@ class LambdaService(yolo.services.BaseService):
         for authorizer in apig_config.get('authorizers', []):
             authr_name = authorizer.pop('name')
             authr_type = authorizer.pop('authType')
-            if 'providerARNs' in authorizer:
+            if (
+                'providerARNs' in authorizer and
+                authorizer['type'] != 'COGNITO_USER_POOLS'
+            ):
                 # providerARNs isn't allowed in this Swagger section.
                 # Probably we don't even need this in most cases. *shrug*
                 authorizer.pop('providerARNs')
