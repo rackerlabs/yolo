@@ -6,6 +6,10 @@ Manage infrastructure and services on AWS for multiple accounts/stages.
 
 [![Documentation Status](https://readthedocs.org/projects/yolocli/badge/?version=latest)](http://yolocli.readthedocs.io/en/latest/?badge=latest)
 
+## Docs
+
+Detailed documentation is available at https://yolocli.readthedocs.io/en/latest/
+
 ## Terminology
 
  * __Project:__ a collection of services, the code repository represents a project.
