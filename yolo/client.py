@@ -1344,25 +1344,34 @@ class YoloClient(object):
         self.set_up_yolofile_context(stage=stage)
         self._yolo_file = self.yolo_file.render(**self.context)
 
-        # get ssm client
+        params = {}
+
         ssm_client = self.faws_client.aws_client(
             self.context.account.account_number,
             'ssm',
             self.context.stage.region,
         )
-
         param_path = '/{service}/{stage}/latest/'.format(
             service=service, stage=stage
         )
 
-        results = ssm_client.get_parameters_by_path(
+        def _save_params_from_response(response):
+            for param in response['Parameters']:
+                param_name = param['Name'].split(param_path)[1]
+                params[param_name] = param['Value']
+
+        response = ssm_client.get_parameters_by_path(
             Path=param_path, WithDecryption=True
         )
+        _save_params_from_response(response)
+        next_token = response.get('NextToken')
+        while next_token is not None:
+            response = ssm_client.get_parameters_by_path(
+                Path=param_path, WithDecryption=True, NextToken=next_token
+            )
+            _save_params_from_response(response)
+            next_token = response.get('NextToken')
 
-        params = {}
-        for param in results['Parameters']:
-            param_name = param['Name'].split(param_path)[1]
-            params[param_name] = param['Value']
         return params
 
     def put_parameters(self, service, stage, param=None, use_defaults=False,
