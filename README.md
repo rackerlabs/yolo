@@ -1,4 +1,6 @@
-# yolo
+# yolo 
+
+<img src="https://user-images.githubusercontent.com/956227/34872492-478dfc8e-f791-11e7-9dab-61ba0bb0a0c2.png" width="150" alt="yolologo" />
 
 Manage infrastructure and services on AWS for multiple accounts/stages.
 
