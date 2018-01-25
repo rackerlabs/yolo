@@ -1462,6 +1462,7 @@ class YoloClient(object):
                         '(ctrl+d when finished):'.format(param_name),
                         end=''
                     )
+                    sys.stdout.flush()
                     param_value = sys.stdin.read()
                 else:
                     # Otherwise, just get a single line entry using non-echoing
