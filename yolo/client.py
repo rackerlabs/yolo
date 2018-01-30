@@ -792,7 +792,11 @@ class YoloClient(object):
             )
 
     def show_config(self):
-        print('Rackspace user: {}'.format(self.rax_username))
+        # NOTE(larsbutler): Generally we access the `rax_username` using the
+        # property, but in this case it is acceptable to have an
+        # empty/non-configured username in order to show the state of the
+        # application config.
+        print('Rackspace user: {}'.format(self._rax_username or ''))
         print('AWS CLI named profile: {}'.format(self.aws_profile_name))
 
     def clear_config(self):
