@@ -219,7 +219,7 @@ class YoloClient(object):
             self.context.account.account_number,
         )
 
-    def _get_service_client(self, service):
+    def _get_service_cfg(self, service):
         service_cfg = self.yolo_file.services.get(service)
         if service_cfg is None:
             raise YoloError(
@@ -229,6 +229,10 @@ class YoloClient(object):
                     services=', '.join(sorted(self.yolo_file.services.keys())),
                 )
             )
+        return service_cfg
+
+    def _get_service_client(self, service):
+        service_cfg = self._get_service_cfg(service)
         service_client = SERVICE_TYPE_MAP[service_cfg['type']](
             self.yolo_file, self.faws_client, self.context
             # TODO: add timeout
@@ -1341,6 +1345,7 @@ class YoloClient(object):
         :returns:
             `dict` of param name/param value key/value pairs.
         """
+        self._get_service_cfg(service)
         self.set_up_yolofile_context(stage=stage)
         self._yolo_file = self.yolo_file.render(**self.context)
 
@@ -1387,7 +1392,7 @@ class YoloClient(object):
         self.set_up_yolofile_context(stage=stage)
         self._yolo_file = self.yolo_file.render(**self.context)
 
-        service_cfg = self.yolo_file.services[service]
+        service_cfg = self._get_service_cfg(service)
         # Get the default parameters first, if available.
         parameters = service_cfg['deploy']['parameters']['stages'].get(
             'default', []
