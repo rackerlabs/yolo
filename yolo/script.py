@@ -71,6 +71,38 @@ def stage_option(**attrs):
     return option
 
 
+def key_option(**attrs):
+    """A --key option for commands."""
+    kwargs = dict(
+        metavar='KEY',
+        required=False,
+        help='Output key name.'
+    )
+    kwargs.update(attrs)
+    option = click.option(
+        '--key', multiple=True,
+        **kwargs
+    )
+    return option
+
+
+def format_option(**attrs):
+    """A --format option for commands."""
+    kwargs = dict(
+        metavar='FORMAT',
+        required=False,
+        default='table',
+        type=click.Choice(['table', 'json', 'value']),
+        help='Output Format Type name.'
+    )
+    kwargs.update(attrs)
+    option = click.option(
+        '--format',
+        **kwargs
+    )
+    return option
+
+
 def service_option(**attrs):
     """A --service option for commands."""
     kwargs = dict(
@@ -384,6 +416,8 @@ def show_service(yolo_file=None, **kwargs):
 @cli.command('show-outputs')
 @account_option(required=False)
 @stage_option(required=False)
+@key_option(required=False)
+@format_option(required=False)
 @yolo_file_option()
 @handle_yolo_errors
 def show_outputs(yolo_file=None, **kwargs):
