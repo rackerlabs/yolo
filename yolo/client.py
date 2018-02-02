@@ -1507,7 +1507,7 @@ class YoloClient(object):
         )
         lambda_svc.show(service, stage)
 
-    def show_outputs(self, stage=None, account=None):
+    def show_outputs(self, stage=None, account=None, key=None, format=None):
         with_stage = stage is not None
         with_account = account is not None
 
@@ -1530,10 +1530,20 @@ class YoloClient(object):
                 self.context.account.account_number,
                 self.context.account.default_region,
             )
-        table = [('Name', 'Value')]
-        for output in sorted(outputs.items()):
-            table.append(output)
-        print(tabulate.tabulate(table, headers='firstrow'))
+
+        if len(key) > 0:
+            # Drop everything except for the specified keys.
+            outputs = {k: outputs[k] for k in key}
+        if format == 'json':
+            print(json.dumps(outputs, sort_keys=True, indent=2))
+        elif format == 'table':
+            table = [('Name', 'Value')]
+            for output in sorted(outputs.items()):
+                table.append(output)
+            print(tabulate.tabulate(table, headers='firstrow'))
+        elif format == 'value':
+            for output in outputs.values():
+                print(output)
 
 
 def get_username():
