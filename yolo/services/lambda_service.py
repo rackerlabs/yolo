@@ -992,17 +992,11 @@ class LambdaService(yolo.services.BaseService):
         :param str service:
             The name of the service being configured.
         :param str stage:
-            Stage for which to perform this base path mapping.
+            Stage for which to perform these base path mapping configs.
         """
         service_cfg = self.yolo_file.services[service]
-        stage_cfg = self.yolo_file.get_stage_config(stage)
 
         apigateway_configs = service_cfg['deploy']['apigateway']
-        apig_client = self.faws_client.aws_client(
-            self.context.account.account_number,
-            'apigateway',
-            region_name=stage_cfg['region'],
-        )
         if isinstance(apigateway_configs, dict):
             apigateway_configs = [apigateway_configs]
 
@@ -1012,69 +1006,99 @@ class LambdaService(yolo.services.BaseService):
             )
             # Add base path mapping
             domains = apigateway_config['domains']
-            # TODO(larsbutler): Can we assume there is only one?
-            [domain] = domains
-            domain_name = domain['domain_name']
-            base_path = domain['base_path']
-            if domain_name == '':
-                # This is an easy way to let us know the domain does not exist for
-                # the given stage, so let's skip base path mapping creation.
-                print('Domain name is empty, skipping base path mapping.')
-                return
-            if base_path == '/':
-                # This is the default base path, but you shouldn't specify it
-                # explicitly.
-                # If this base path is specified, change it to empty string in
-                # order to achieve the same result.
-                base_path = ''
-            existing_base_paths = [
-                # For some strange reason the API-G API returns the string `(none)`
-                # if the base mapping is for `/`.
-                item['basePath'].replace('(none)', '')
-                for item in
-                apig_client.get_base_path_mappings(
-                    domainName=domain_name,
-                    limit=500,
-                ).get('items', [])
-            ]
-            if base_path in existing_base_paths:
-                # If the base path mapping is set up correctly, we don't have to do
-                # anything.
-                base_path_mapping = apig_client.get_base_path_mapping(
-                    domainName=domain_name,
-                    # That strange behavior again: if base path would be empty, we
-                    # have to address it as `(none)`.
-                    basePath=base_path or '(none)',
+            # NOTE(larsbutler): There can indeed be multiple domain/base path
+            # mapping configs for a single app.
+            for domain in domains:
+                self._add_domain_base_path_mapping(stage, domain, rest_api_id)
+
+    def _add_domain_base_path_mapping(self, service, stage, domain, rest_api_id):
+        """Add a single base path mapping for a domain.
+
+        :param str service:
+            The name of the service being configured.
+        :param str stage:
+            Stage for which to perform this base path mapping config.
+        :param dict domain:
+            `dict` containing two keys:
+
+            - domain_name
+            - base_path
+
+            See `domainName` and `basePath` parameters for
+            https://boto3.readthedocs.io/en/latest/reference/services/apigateway.html#APIGateway.Client.create_base_path_mapping.
+        :param str rest_api_id:
+            ID of an API Gateway REST API resource.
+        """
+        stage_cfg = self.yolo_file.get_stage_config(stage)
+        service_cfg = self.yolo_file.services[service]
+        apigateway_config = service_cfg['deploy']['apigateway']
+
+        apig_client = self.faws_client.aws_client(
+            self.context.account.account_number,
+            'apigateway',
+            region_name=stage_cfg['region'],
+        )
+        domain_name = domain['domain_name']
+        base_path = domain['base_path']
+        if domain_name == '':
+            # This is an easy way to let us know the domain does not exist for
+            # the given stage, so let's skip base path mapping creation.
+            print('Domain name is empty, skipping base path mapping.')
+            return
+        if base_path == '/':
+            # This is the default base path, but you shouldn't specify it
+            # explicitly.
+            # If this base path is specified, change it to empty string in
+            # order to achieve the same result.
+            base_path = ''
+        existing_base_paths = [
+            # For some strange reason the API-G API returns the string `(none)`
+            # if the base mapping is for `/`.
+            item['basePath'].replace('(none)', '')
+            for item in
+            apig_client.get_base_path_mappings(
+                domainName=domain_name,
+                limit=500,
+            ).get('items', [])
+        ]
+        if base_path in existing_base_paths:
+            # If the base path mapping is set up correctly, we don't have to do
+            # anything.
+            base_path_mapping = apig_client.get_base_path_mapping(
+                domainName=domain_name,
+                # That strange behavior again: if base path would be empty, we
+                # have to address it as `(none)`.
+                basePath=base_path or '(none)',
+            )
+            if (
+                base_path_mapping['restApiId'] != rest_api_id or
+                base_path_mapping['stage'] != stage
+            ):
+                # TODO(szilveszter): If the base path mapping was changed, we
+                # have to warn the user about this, because unfortunately the
+                # API for updating base path mappings doesn't work yet.
+                print(
+                    'Base path mapping has to be updated, but action cannot be '
+                    'performed via the API, you have to use the AWS Console.'
                 )
-                if (
-                    base_path_mapping['restApiId'] != rest_api_id or
-                    base_path_mapping['stage'] != stage
-                ):
-                    # TODO(szilveszter): If the base path mapping was changed, we
-                    # have to warn the user about this, because unfortunately the
-                    # API for updating base path mappings doesn't work yet.
-                    print(
-                        'Base path mapping has to be updated, but action cannot be '
-                        'performed via the API, you have to use the AWS Console.'
-                    )
-                else:
-                    print('Base path mapping already in place, no update needed.')
             else:
-                # We have to create a new base path mapping from scratch
-                apig_client.create_base_path_mapping(
-                    domainName=domain_name,
-                    basePath=base_path,
-                    restApiId=rest_api_id,
+                print('Base path mapping already in place, no update needed.')
+        else:
+            # We have to create a new base path mapping from scratch
+            apig_client.create_base_path_mapping(
+                domainName=domain_name,
+                basePath=base_path,
+                restApiId=rest_api_id,
+                stage=stage,
+            )
+            print(
+                'Created base path mapping of {domain} to '
+                '{rest_api_name}:{stage}'.format(
+                    domain=domain_name,
+                    rest_api_name=apigateway_config['rest_api_name'],
                     stage=stage,
                 )
-                print(
-                    'Created base path mapping of {domain} to '
-                    '{rest_api_name}:{stage}'.format(
-                        domain=domain_name,
-                        rest_api_name=apigateway_config['rest_api_name'],
-                        stage=stage,
-                    )
-                )
+            )
 
     def show(self, service, stage):
         """Show configuration details of a service for a given stage.
