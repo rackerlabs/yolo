@@ -1009,7 +1009,7 @@ class LambdaService(yolo.services.BaseService):
             # NOTE(larsbutler): There can indeed be multiple domain/base path
             # mapping configs for a single app.
             for domain in domains:
-                self._add_domain_base_path_mapping(stage, domain, rest_api_id)
+                self._add_domain_base_path_mapping(service, stage, domain, rest_api_id)
 
     def _add_domain_base_path_mapping(self, service, stage, domain, rest_api_id):
         """Add a single base path mapping for a domain.
