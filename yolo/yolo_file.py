@@ -87,6 +87,7 @@ class YoloFile(object):
     SUPPORTED_RUNTIMES = [
         'python2.7',
         'python3.6',
+        'go1.x'
     ]
     YOKE_LAMBDA_FN_CFG = volup.Schema({
         volup.Required('FunctionName'): STRING_SCHEMA,

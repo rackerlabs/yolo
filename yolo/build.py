@@ -21,7 +21,27 @@ FEEDBACK_IN_SECONDS = 60
 STATUS_EXITED = 'exited'
 
 
-def python_build_lambda_function(service_cfg):
+def build_lambda_function(service_cfg):
+    BUILD_FUNCTION_MAP = {
+        'python2.7': build_python,
+        'python3.6': build_python,
+        'go1.x': build_golang,
+    }
+
+    runtime = service_cfg['deploy']['lambda_function_configuration']['Runtime']
+
+    if runtime in BUILD_FUNCTION_MAP:
+        BUILD_FUNCTION_MAP[runtime](service_cfg)
+
+
+def build_golang(service_cfg):
+    os.system('go get -t ./...') #get package dependencies
+    os.system('rm -rf .dist/ && mkdir ./dist')
+    os.system('GOOS=linux GOARCH=amd64 go build -o ./dist/main main.go')
+    os.system('zip ./dist/lambda_function.zip ./dist/main')
+
+
+def build_python(service_cfg):
     build_config = service_cfg['build']
     try:
         # Allow connecting to older Docker versions (e.g. CircleCI 1.0)
