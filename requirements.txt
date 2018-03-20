@@ -1,7 +1,7 @@
 awscli
 boto3
 click
-docker
+docker==2.5.1
 jinja2
 keyring==8.7.0
 keyrings.alt
