@@ -32,6 +32,10 @@ STRING_OR_DICT_SCHEMA = volup.Any(str, unicode, dict)
 AWSAccount = namedtuple(
     'AWSAccount', ['name', 'account_number', 'default_region']
 )
+DEFAULT_REGION = 'us-east-1'
+AWS_PROVIDER = 'aws'
+FAWS_PROVIDER= 'faws'
+CRED_PROVIDERS = [AWS_PROVIDER, FAWS_PROVIDER]
 
 
 class YoloFile(object):
@@ -40,11 +44,20 @@ class YoloFile(object):
 
     # 'accounts' section
     ACCOUNT_SCHEMA = volup.Schema({
-        volup.Required('name'): STRING_SCHEMA,
-        volup.Required('account_number'): STRING_SCHEMA,
-        volup.Required('default_region'): STRING_SCHEMA,
+        # volup.Required('name'): STRING_SCHEMA,
+        volup.Optional('account_number'): STRING_SCHEMA,
+        volup.Required('credentials'): volup.Schema({
+            volup.Required('provider', default='aws'): volup.Any(
+                *CRED_PROVIDERS
+            ),
+            volup.Optional('profile', default='default'): STRING_SCHEMA,
+            volup.Required('default_region', default=DEFAULT_REGION): (
+                STRING_SCHEMA
+            ),
+        }),
     })
-    ACCOUNTS_SCHEMA = volup.Schema([ACCOUNT_SCHEMA])
+    # account-name: account-config
+    ACCOUNTS_SCHEMA = volup.Schema({STRING_SCHEMA: ACCOUNT_SCHEMA})
     # 'templates' section
     ACCOUNT_TEMPLATE_SCHEMA = volup.Schema({
         volup.Required('path'): STRING_SCHEMA,
@@ -61,10 +74,13 @@ class YoloFile(object):
     # 'stages' section
     STAGES_SCHEMA = volup.Schema({
         STRING_SCHEMA: {  # stage name, arbitrary string
-            volup.Required('account'): STRING_SCHEMA,
-            volup.Required('region'): STRING_SCHEMA,
-            volup.Optional('protected'): bool,
-            volup.Optional('params'): {STRING_SCHEMA: STRING_SCHEMA},
+            # volup.Required('account'): STRING_SCHEMA,
+            volup.Required('account', default='default'): STRING_SCHEMA,
+            volup.Required('region', default=DEFAULT_REGION): STRING_SCHEMA,
+            volup.Required('protected', default=False): bool,
+            volup.Required('params', default={}): {
+                STRING_SCHEMA: STRING_SCHEMA
+            },
         },
     })
     # 'services' section
@@ -175,13 +191,26 @@ class YoloFile(object):
             },
         }
     })
+    DEFAULT_ACCOUNTS = {
+        'default': {
+            'credentials': {
+                'provider': 'aws',
+                'profile': 'default',
+            }
+        }
+    }
+    DEFAULT_STAGES = {
+        'default': {
+            'account': 'default',
+        }
+    }
     # top-level schema
     YOLOFILE_SCHEMA = volup.Schema({
         volup.Required('name'): STRING_SCHEMA,
-        volup.Required('accounts'): ACCOUNTS_SCHEMA,
-        volup.Required('templates'): TEMPLATES_SCHEMA,
-        volup.Required('stages'): STAGES_SCHEMA,
-        volup.Required('services'): SERVICES_SCHEMA,
+        volup.Required('accounts', default=DEFAULT_ACCOUNTS): ACCOUNTS_SCHEMA,
+        volup.Optional('templates'): TEMPLATES_SCHEMA,
+        volup.Required('stages', default=DEFAULT_STAGES): STAGES_SCHEMA,
+        volup.Optional('services'): SERVICES_SCHEMA,
     })
 
     def __init__(self, content):
@@ -189,8 +218,8 @@ class YoloFile(object):
         :param content:
             `dict` representation of the contents read from a yolo.yaml file.
         """
-        self._raw_content = content
-        self._validate()
+        # Validate the contents and apply any defaults defined in the schema:
+        self._raw_content = self.__class__.YOLOFILE_SCHEMA(content)
         self.app_name = self._raw_content['name']
 
     @classmethod
@@ -212,9 +241,6 @@ class YoloFile(object):
                   Dumper=yaml.RoundTripDumper)
         fp.seek(0)
         return fp
-
-    def _validate(self):
-        self.YOLOFILE_SCHEMA(self._raw_content)
 
     @property
     def accounts(self):
@@ -253,13 +279,16 @@ class YoloFile(object):
         `accounts` section of the yolo.yml file.
 
         :param account:
-            The account name or actual account number.
+            The account name or actual account number. If `None`, the account
+            number is implicit and we need to get it using any available
+            credentials.
         :returns:
             :class:`AWSAccount` instance.
         :raises:
             :class:`yolo.exceptions.YoloError` if the account name or number
             can't be found.
         """
+        import pdb; pdb.set_trace()
         # Check if it's an alias or a real number.
         account_name = None
         account_number = None
