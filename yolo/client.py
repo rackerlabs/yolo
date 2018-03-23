@@ -105,6 +105,39 @@ class YoloClient(object):
         # account/stage information (including stack outputs) is read.
         self._context = None
 
+        self.some_command()
+
+    def some_command(self, stage='lars', account='default'):
+        pass
+        # read unrendered yolo_file
+        yf = self.yolo_file
+        # figure out which credential provider to load
+        # select the account from the `stage` or the `account`
+        #   you can't specify both; only one or the other
+        if stage is not None:
+            # Stage case
+
+            # If the stage isn't defined explicitly, use the default stage
+            # config:
+            stage_cfg = yf.stages.get(stage, yf.stages.get('default'))
+            import pdb; pdb.set_trace()
+            acct_cfg = yf.accounts.get(stage_cfg['account'])
+            import pdb; pdb.set_trace()
+        elif account is not None:
+            pass
+            # TODO: load acct_cfg another way
+
+        # Based on acct_cfg['provider'], load the appropriate credential
+        # provider.
+
+
+    @property
+    def yolo_file(self):
+        """Lazily load the yolo config file."""
+        if self._yolo_file is None:
+            self._yolo_file = self._get_yolo_file(self._yolo_file_path)
+        return self._yolo_file
+
     @property
     def rax_username(self):
         if self._rax_username is None:
@@ -156,14 +189,12 @@ class YoloClient(object):
             return self._context
 
     @property
-    def yolo_file(self):
-        if self._yolo_file is None:
-            self._yolo_file = self._get_yolo_file(self._yolo_file_path)
-        return self._yolo_file
+    def aws_credentials_provider(self):
+        """Lazily instantiate an provider object.
 
-    @property
-    def faws_client(self):
-        """Lazily instantiate a FAWS client."""
+        In essence, this provides an abstract and generalized way of fetching
+        credentials for connecting to the AWS API.
+        """
         if self._faws_client is None:
             # NOTE(szilveszter): This is just a quick hack, because I wanted
             # to avoid refactoring everything. If this ends up being a good
@@ -235,13 +266,13 @@ class YoloClient(object):
     def _get_service_client(self, service):
         service_cfg = self._get_service_cfg(service)
         service_client = SERVICE_TYPE_MAP[service_cfg['type']](
-            self.yolo_file, self.faws_client, self.context
+            self.yolo_file, self.aws_credentials_provider, self.context
             # TODO: add timeout
         )
         return service_client
 
     def get_stage_outputs(self, account_number, region, stage):
-        cf_client = self.faws_client.aws_client(account_number, 'cloudformation', region)
+        cf_client = self.aws_credentials_provider.aws_client(account_number, 'cloudformation', region)
         cf = CloudFormation(cf_client)
         stack_name = self.get_stage_stack_name(account_number, stage)
         try:
@@ -253,7 +284,7 @@ class YoloClient(object):
             )
 
     def get_account_outputs(self, account_number, region):
-        cf_client = self.faws_client.aws_client(account_number, 'cloudformation', region)
+        cf_client = self.aws_credentials_provider.aws_client(account_number, 'cloudformation', region)
         cf = CloudFormation(cf_client)
         stack_name = self.get_account_stack_name(account_number)
         # Full account-level data might not be available, when the baseline
@@ -358,7 +389,7 @@ class YoloClient(object):
         )
 
     def get_aws_account_credentials(self, account_number):
-        creds = self.faws_client.get_aws_account_credentials(account_number)
+        creds = self.aws_credentials_provider.get_aws_account_credentials(account_number)
         cred = creds['credential']
         cred_vars = dict(
             AWS_ACCESS_KEY_ID=cred['accessKeyId'],
@@ -369,7 +400,7 @@ class YoloClient(object):
 
     def _setup_aws_credentials_in_environment(self, acct_num, region):
         os.environ['AWS_DEFAULT_REGION'] = region
-        aws_session = self.faws_client.boto3_session(acct_num)
+        aws_session = self.aws_credentials_provider.boto3_session(acct_num)
         credentials = aws_session.get_credentials()
         os.environ['AWS_ACCESS_KEY_ID'] = credentials.access_key
         os.environ['AWS_SECRET_ACCESS_KEY'] = credentials.secret_key
@@ -421,7 +452,7 @@ class YoloClient(object):
         # No stage specified; show status for all stages
         else:
             stgs_accts_regions = set([
-                (stg_name, stg['account'], stg['region'])
+                (stg_name, stg.get('account'), stg['region'])
                 for stg_name, stg in yf.stages.items()
             ])
         return stgs_accts_regions
@@ -442,7 +473,7 @@ class YoloClient(object):
         :returns:
             :class:`boto3.resources.factory.s3.Bucket` instance.
         """
-        s3_client = self.faws_client.aws_client(
+        s3_client = self.aws_credentials_provider.aws_client(
             acct_num, 's3', region_name=region
         )
         try:
@@ -465,7 +496,7 @@ class YoloClient(object):
                         'LocationConstraint': region
                     }
                 s3_client.create_bucket(**create_bucket_kwargs)
-        s3 = self.faws_client.boto3_session(acct_num).resource('s3', region_name=region)
+        s3 = self.aws_credentials_provider.boto3_session(acct_num).resource('s3', region_name=region)
         bucket = s3.Bucket(bucket_name)
         return bucket
 
@@ -835,7 +866,7 @@ class YoloClient(object):
         )
 
     def list_accounts(self):
-        accounts = self.faws_client.list_aws_accounts()
+        accounts = self.aws_credentials_provider.list_aws_accounts()
         headers = ['Account Number', 'Name', 'Service Level']
         aws_accounts = accounts['awsAccounts']
         table = [headers]
@@ -1087,7 +1118,7 @@ class YoloClient(object):
                 ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
             )
 
-        cf_client = self.faws_client.aws_client(
+        cf_client = self.aws_credentials_provider.aws_client(
             self.context.account.account_number,
             'cloudformation',
             region_name=region,
@@ -1130,7 +1161,7 @@ class YoloClient(object):
 
         for stg_name, account, region in stgs_accts_regions:
             aws_account = self.yolo_file.normalize_account(account)
-            cf_client = self.faws_client.aws_client(
+            cf_client = self.aws_credentials_provider.aws_client(
                 aws_account.account_number, 'cloudformation', region_name=region
             )
             if stg_name == YoloFile.DEFAULT_STAGE:
@@ -1193,13 +1224,10 @@ class YoloClient(object):
             build_log = open(build_log_path, 'a')
 
         try:
-            self.set_up_yolofile_context(stage=stage)
-            self._yolo_file = self.yolo_file.render(**self.context)
-
             lambda_svc = lambda_service.LambdaService(
-                self.yolo_file, self.faws_client, self.context
+                self.yolo_file, self.aws_credentials_provider, self.context
             )
-            lambda_svc.build(service, stage, build_log)
+            lambda_svc.build(service, stage)
         finally:
             build_log.close()
 
@@ -1259,7 +1287,7 @@ class YoloClient(object):
         if timeout is None:
             timeout = lambda_service.LambdaService.DEFAULT_TIMEOUT
         lambda_svc = lambda_service.LambdaService(
-            self.yolo_file, self.faws_client, self.context, timeout
+            self.yolo_file, self.aws_credentials_provider, self.context, timeout
         )
         if from_local:
             lambda_svc.deploy_local_version(service, stage)
@@ -1278,7 +1306,7 @@ class YoloClient(object):
         )
 
         s3_svc = s3_service.S3Service(
-            self.yolo_file, self.faws_client, self.context
+            self.yolo_file, self.aws_credentials_provider, self.context
         )
         s3_svc.deploy(service, stage, version, bucket)
 
@@ -1364,7 +1392,7 @@ class YoloClient(object):
 
         params = {}
 
-        ssm_client = self.faws_client.aws_client(
+        ssm_client = self.aws_credentials_provider.aws_client(
             self.context.account.account_number,
             'ssm',
             self.context.stage.region,
@@ -1443,7 +1471,7 @@ class YoloClient(object):
             parameters = [x for x in parameters if x['name'] in param]
 
         # get ssm client
-        ssm_client = self.faws_client.aws_client(
+        ssm_client = self.aws_credentials_provider.aws_client(
             self.context.account.account_number,
             'ssm',
             self.context.stage.region,
@@ -1546,7 +1574,7 @@ class YoloClient(object):
         self._yolo_file = self.yolo_file.render(**self.context)
 
         lambda_svc = lambda_service.LambdaService(
-            self.yolo_file, self.faws_client, self.context
+            self.yolo_file, self.aws_credentials_provider, self.context
         )
         lambda_svc.show(service, stage)
 
