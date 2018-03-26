@@ -1,11 +1,14 @@
 import hashlib
 import logging
 import os
+import subprocess
 import time
 
 import docker
 
 from yolo import utils
+from yolo import const
+from yolo.exceptions import YoloError
 
 LOG = logging.getLogger(__name__)
 
@@ -22,26 +25,30 @@ STATUS_EXITED = 'exited'
 
 
 def build_lambda_function(service_cfg):
-    BUILD_FUNCTION_MAP = {
-        'python2.7': build_python,
-        'python3.6': build_python,
-        'go1.x': build_golang,
-    }
-
+    BUILD_FUNCTIONS = dict(
+        (key, 'build_{}'.format(key.replace('.', ''))) for key in const.SUPPORTED_LAMBDA_RUNTIMES
+    )
     runtime = service_cfg['deploy']['lambda_function_configuration']['Runtime']
 
-    if runtime in BUILD_FUNCTION_MAP:
-        BUILD_FUNCTION_MAP[runtime](service_cfg)
+    BUILD_FUNCTIONS[runtime](service_cfg, runtime)
 
 
-def build_golang(service_cfg):
-    os.system('go get -t ./...') #get package dependencies
-    os.system('rm -rf .dist/ && mkdir ./dist')
-    os.system('GOOS=linux GOARCH=amd64 go build -o ./dist/main main.go')
-    os.system('zip ./dist/lambda_function.zip ./dist/main')
+def not_supported_yet(service_cfg, runtime):
+    raise YoloError('Runtime "{}" is not supported yet.'.format(runtime))
 
 
-def build_python(service_cfg):
+def build_go1x(service_cfg, runtime):
+    # get package dependencies
+    subprocess.call('go get -t ./...', shell=True)
+    # create clean 'dist' directory
+    subprocess.call('rm -rf ./dist && mkdir ./dist', shell=True)
+    # build GO lambda bin
+    subprocess.call('GOOS=linux GOARCH=amd64 go build -o ./dist/main main.go', shell=True)
+    # zip the previously built GO package for deployment
+    subprocess.call('zip ./dist/lambda_function.zip ./dist/main', shell=True)
+
+
+def build_python(service_cfg, runtime):
     build_config = service_cfg['build']
     try:
         # Allow connecting to older Docker versions (e.g. CircleCI 1.0)
@@ -56,7 +63,6 @@ def build_python(service_cfg):
     dist_dir = os.path.abspath(build_config['dist_dir'])
     # List of files/dirs to include from `working_dir`
     include = build_config['include']
-    runtime = service_cfg['deploy']['lambda_function_configuration']['Runtime']
     # TODO: check if the file actually exists
     dependencies_path = os.path.join(working_dir, build_config['dependencies'])
     with open(dependencies_path) as fp:
@@ -113,6 +119,15 @@ def build_python(service_cfg):
     wait_for_container_to_finish(container)
     LOG.warning("Build finished.")
     remove_container(container)
+
+
+build_nodejs43 = not_supported_yet
+build_nodejs610 = not_supported_yet
+build_java8 = not_supported_yet
+build_dotnetcore10 = not_supported_yet
+build_dotnetcore20 = not_supported_yet
+build_python27 = build_python
+build_python36 = build_python
 
 
 def wait_for_container_to_finish(container):

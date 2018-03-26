@@ -21,6 +21,7 @@ import voluptuous as volup
 
 import yolo.exceptions
 from yolo import utils
+from yolo import const
 
 PY3 = sys.version_info >= (2, 8)
 if PY3:
@@ -84,11 +85,6 @@ class YoloFile(object):
             }],
         },
     })
-    SUPPORTED_RUNTIMES = [
-        'python2.7',
-        'python3.6',
-        'go1.x'
-    ]
     YOKE_LAMBDA_FN_CFG = volup.Schema({
         volup.Required('FunctionName'): STRING_SCHEMA,
         volup.Required('Role'): STRING_SCHEMA,
@@ -103,7 +99,7 @@ class YoloFile(object):
         volup.Optional('Environment'): {
             'Variables': {STRING_SCHEMA: STRING_SCHEMA},
         },
-        volup.Optional('Runtime'): volup.Any(*SUPPORTED_RUNTIMES),
+        volup.Optional('Runtime'): volup.Any(*const.SUPPORTED_LAMBDA_RUNTIMES),
         volup.Optional('TracingConfig'): {
             volup.Required('Mode'): volup.Any('Active', 'PassThrough'),
         },
