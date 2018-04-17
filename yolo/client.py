@@ -1320,7 +1320,11 @@ class YoloClient(object):
         sp_args.extend(posargs)
         sp = subprocess.Popen(sp_args, env=sp_env)
         # TODO(larsbutler): Get stdout and stderr
-        sp.wait()
+        exit_status = sp.wait()
+        if not exit_status == 0:
+            raise YoloError(
+                'Command exited with non-zero ({}) status'.format(exit_status)
+            )
 
     def show_parameters(self, service, stage):
         params = self._get_ssm_parameters(service, stage)
