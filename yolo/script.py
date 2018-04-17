@@ -344,6 +344,7 @@ def shell(yolo_file=None, **kwargs):
     required=False,
     nargs=-1,
 )
+@handle_yolo_errors
 def run(yolo_file=None, **kwargs):
     """Run a script with AWS account credentials."""
     account = kwargs['account']
