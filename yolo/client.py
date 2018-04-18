@@ -1502,6 +1502,36 @@ class YoloClient(object):
             )
         print('Environment configuration complete!')
 
+    def ensure_parameters(self, service, stage):
+        # Get the current for a given service/stage from SSM:
+        ssm_params = self._get_ssm_parameters(service, stage)
+        ssm_param_names = set(ssm_params.keys())
+
+        # Get the parameter names that are defined in the yolo file:
+        service_cfg = self.yolo_file.services[service]
+        parameters_cfg = service_cfg['deploy']['parameters']['stages'].get(
+            stage,
+            service_cfg['deploy']['parameters']['stages']['default']
+        )
+        yolo_param_names = set([param['name'] for param in parameters_cfg])
+
+        missing_params = yolo_param_names.difference(ssm_param_names)
+        if missing_params:
+            raise yolo.exceptions.YoloError(
+                'The following parameters were not found in SSM '
+                'for "--service {service}" and "--stage {stage}":'
+                '\n\t- {missing_params}'
+                '\nTo fix this, try running '
+                '`yolo put-parameters ' '--service {service} '
+                '--stage {stage}`.'.format(
+                    missing_params='\n\t- '.join(sorted(missing_params)),
+                    service=service,
+                    stage=stage,
+                )
+            )
+        else:
+            print('All required parameters are stored in SSM')
+
     def show_service(self, service, stage):
         self.set_up_yolofile_context(stage=stage)
         self._yolo_file = self.yolo_file.render(**self.context)
