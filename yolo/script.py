@@ -404,6 +404,16 @@ def put_parameters(yolo_file=None, **kwargs):
     client.YoloClient(yolo_file=yolo_file).put_parameters(**kwargs)
 
 
+@cli.command(name='ensure-parameters')
+@service_option(required=True)
+@stage_option(required=True)
+@yolo_file_option()
+@handle_yolo_errors
+def ensure_parameters(yolo_file=None, **kwargs):
+    """Ensure that all required parameters are defined in SSM."""
+    client.YoloClient(yolo_file=yolo_file).ensure_parameters(**kwargs)
+
+
 @cli.command(name='show-service')
 @service_option(required=True)
 @stage_option(required=True)
