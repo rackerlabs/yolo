@@ -63,9 +63,18 @@ class AWSCredentialsProvider(object):
         )
 
     @property
-    def boto3_session(self, aws_account_number=None):
+    def boto3_session(self):
         if self._session is None:
             self._session = boto3.session.Session(
                 profile_name=self._profile_name
             )
         return self._session
+
+    def aws_client(self, aws_account, aws_service, region_name=None, **kwargs):
+        """
+        :param aws_account:
+            Ignored.
+        """
+        return self.boto3_session.client(
+            aws_service, region_name=region_name, **kwargs
+        )
