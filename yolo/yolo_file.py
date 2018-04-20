@@ -57,7 +57,7 @@ class YoloFile(object):
         }),
     })
     # account-name: account-config
-    ACCOUNTS_SCHEMA = volup.Schema({STRING_SCHEMA: ACCOUNT_SCHEMA})
+    ACCOUNTS_SCHEMA = volup.Schema({volup.Any(STRING_SCHEMA, None): ACCOUNT_SCHEMA})
     # 'templates' section
     ACCOUNT_TEMPLATE_SCHEMA = volup.Schema({
         volup.Required('path'): STRING_SCHEMA,
@@ -75,7 +75,9 @@ class YoloFile(object):
     STAGES_SCHEMA = volup.Schema({
         STRING_SCHEMA: {  # stage name, arbitrary string
             # volup.Required('account'): STRING_SCHEMA,
-            volup.Required('account', default='default'): STRING_SCHEMA,
+            volup.Required('account', default=None): (
+                volup.Any(STRING_SCHEMA, None)
+            ),
             volup.Required('region', default=DEFAULT_REGION): STRING_SCHEMA,
             volup.Required('protected', default=False): bool,
             volup.Required('params', default={}): {
@@ -192,7 +194,7 @@ class YoloFile(object):
         }
     })
     DEFAULT_ACCOUNTS = {
-        'default': {
+        None: {
             'credentials': {
                 'provider': 'aws',
                 'profile': 'default',
@@ -201,7 +203,7 @@ class YoloFile(object):
     }
     DEFAULT_STAGES = {
         'default': {
-            'account': 'default',
+            'account': None,
         }
     }
     # top-level schema
@@ -271,6 +273,20 @@ class YoloFile(object):
                     'stage is defined.'
                 )
 
+    def get_aws_account(self, account=None):
+        """
+        :param account:
+            The account name or actual account number. If `None`, the account
+            number is implicit and we need to get it using any available
+            credentials.
+        :returns:
+            :class:`AWSAccount` instance.
+        """
+        if account is None:
+            return AWSAccount(None, None, None)
+        else:
+            return self.normalize_account(account)
+
     def normalize_account(self, account):
         """Take an account name or number and return an `AWSAccount` instance.
 
@@ -288,7 +304,6 @@ class YoloFile(object):
             :class:`yolo.exceptions.YoloError` if the account name or number
             can't be found.
         """
-        import pdb; pdb.set_trace()
         # Check if it's an alias or a real number.
         account_name = None
         account_number = None
