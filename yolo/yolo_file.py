@@ -15,6 +15,7 @@
 from collections import namedtuple
 import sys
 
+from dotted_dict import DottedDict
 import jinja2
 from ruamel import yaml
 import voluptuous as volup
@@ -45,7 +46,9 @@ class YoloFile(object):
     # 'accounts' section
     ACCOUNT_SCHEMA = volup.Schema({
         # volup.Required('name'): STRING_SCHEMA,
-        volup.Optional('account_number'): STRING_SCHEMA,
+        volup.Required('account_number', default=None): volup.Any(
+            STRING_SCHEMA, None
+        ),
         volup.Required('credentials'): volup.Schema({
             volup.Required('provider', default='aws'): volup.Any(
                 *CRED_PROVIDERS
@@ -57,7 +60,7 @@ class YoloFile(object):
         }),
     })
     # account-name: account-config
-    ACCOUNTS_SCHEMA = volup.Schema({volup.Any(STRING_SCHEMA, None): ACCOUNT_SCHEMA})
+    ACCOUNTS_SCHEMA = volup.Schema({STRING_SCHEMA: ACCOUNT_SCHEMA})
     # 'templates' section
     ACCOUNT_TEMPLATE_SCHEMA = volup.Schema({
         volup.Required('path'): STRING_SCHEMA,
@@ -75,9 +78,7 @@ class YoloFile(object):
     STAGES_SCHEMA = volup.Schema({
         STRING_SCHEMA: {  # stage name, arbitrary string
             # volup.Required('account'): STRING_SCHEMA,
-            volup.Required('account', default=None): (
-                volup.Any(STRING_SCHEMA, None)
-            ),
+            volup.Required('account', default='default'): STRING_SCHEMA,
             volup.Required('region', default=DEFAULT_REGION): STRING_SCHEMA,
             volup.Required('protected', default=False): bool,
             volup.Required('params', default={}): {
@@ -194,7 +195,7 @@ class YoloFile(object):
         }
     })
     DEFAULT_ACCOUNTS = {
-        None: {
+        'default': {
             'credentials': {
                 'provider': 'aws',
                 'profile': 'default',
@@ -203,7 +204,7 @@ class YoloFile(object):
     }
     DEFAULT_STAGES = {
         'default': {
-            'account': None,
+            'account': 'default',
         }
     }
     # top-level schema
@@ -221,7 +222,9 @@ class YoloFile(object):
             `dict` representation of the contents read from a yolo.yaml file.
         """
         # Validate the contents and apply any defaults defined in the schema:
-        self._raw_content = self.__class__.YOLOFILE_SCHEMA(content)
+        self._raw_content = content
+        self.content = self.validate()
+
         self.app_name = self._raw_content['name']
 
     @classmethod
@@ -244,21 +247,35 @@ class YoloFile(object):
         fp.seek(0)
         return fp
 
+    def validate(self):
+        """Validate and return the contents of this yolo config file.
+
+        :returns:
+            `DottedDict`
+        :raises:
+            TODO: a useful error with better formatting than voluptuous offers
+        """
+        return DottedDict(self.__class__.YOLOFILE_SCHEMA(self._raw_content))
+
+    @property
+    def name(self):
+        return self.content.name
+
     @property
     def accounts(self):
-        return self._raw_content['accounts']
+        return self.content.accounts
 
     @property
     def stages(self):
-        return self._raw_content['stages']
+        return self.content.stages
 
     @property
     def templates(self):
-        return self._raw_content['templates']
+        return self.content.templates
 
     @property
     def services(self):
-        return self._raw_content['services']
+        return self.content.services
 
     def get_stage_config(self, stage):
         if stage in self.stages:
