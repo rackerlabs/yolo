@@ -18,6 +18,7 @@ import sys
 import click
 
 from yolo import client
+from yolo import commands
 
 
 # Click only supports --help by default.
@@ -233,7 +234,8 @@ def list_accounts():
 @handle_yolo_errors
 def deploy_infra(yolo_file=None, **kwargs):
     """Deploy infrastructure from templates."""
-    client.YoloClient(yolo_file=yolo_file).deploy_infra(**kwargs)
+    # client.YoloClient(yolo_file=yolo_file).deploy_infra(**kwargs)
+    commands.deploy_infra(yolo_file_path=yolo_file, **kwargs)
 
 
 @cli.command()
