@@ -70,6 +70,20 @@ class AWSCredentialsProvider(object):
             )
         return self._session
 
+    def get_account_number(self, aws_account):
+        """Figure out the concrete AWS account number from an account alias.
+
+        :param str aws_account:
+            Alias/label for an account as defined the yolo config file, or
+            `None`.
+
+        :returns:
+            AWS account number, as a string.
+        """
+        return self.aws_client(
+            aws_account, 'sts'
+        ).get_caller_identity().get('Account')
+
     def aws_client(self, aws_account, aws_service, region_name=None, **kwargs):
         """
         :param aws_account:
