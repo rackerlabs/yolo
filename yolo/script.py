@@ -234,8 +234,8 @@ def list_accounts():
 @handle_yolo_errors
 def deploy_infra(yolo_file=None, **kwargs):
     """Deploy infrastructure from templates."""
-    # client.YoloClient(yolo_file=yolo_file).deploy_infra(**kwargs)
-    commands.deploy_infra(yolo_file_path=yolo_file, **kwargs)
+    client.YoloClient(yolo_file_path=yolo_file).deploy_infra(**kwargs)
+    # commands.deploy_infra(yolo_file_path=yolo_file, **kwargs)
 
 
 @cli.command()
@@ -244,7 +244,7 @@ def deploy_infra(yolo_file=None, **kwargs):
 @handle_yolo_errors
 def status(yolo_file=None, **kwargs):
     """Show infrastructure deployments status."""
-    client.YoloClient(yolo_file=yolo_file).status(**kwargs)
+    client.YoloClient(yolo_file_path=yolo_file).status(**kwargs)
 
 
 @cli.command(name='build-lambda')
