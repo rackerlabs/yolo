@@ -1,4 +1,5 @@
 import datetime
+import os
 import subprocess
 
 from dotted_dict import DottedDict
@@ -50,6 +51,7 @@ def runtime_context(
     if version_hash is not None:
         ctx.version_hash = version_hash
 
+    ctx.account = DottedDict()
     if account_name is not None:
         ctx.account.name = account_name
     if account_number is not None:
@@ -57,6 +59,7 @@ def runtime_context(
     if account_outputs is not None:
         ctx.account.outputs = account_outputs
 
+    ctx.stage = DottedDict()
     if stage_name is not None:
         ctx.stage.name = stage_name
     if stage_region is not None:
