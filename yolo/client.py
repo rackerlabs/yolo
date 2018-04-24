@@ -39,6 +39,12 @@ except ImportError:
 import keyring
 import tabulate
 
+import yolo.const
+import yolo.context
+import yolo.credentials.aws
+import yolo.exceptions
+import yolo.yolo_file
+
 from yolo.cloudformation import CloudFormation
 from yolo import const
 from yolo.credentials.aws_cli import AWSCLICredentials
@@ -87,56 +93,120 @@ class FakeYokeArgs(object):
 
 class YoloClient(object):
 
-    def __init__(self, yolo_file=None):
-        self._yolo_file_path = yolo_file
-        self._yolo_file = None
-        self._faws_client = None
+#    def __init__(self, yolo_file=None):
+#        self._yolo_file_path = yolo_file
+#        self._yolo_file = None
+#        self._faws_client = None
+#
+#        # Credentials for accessing FAWS accounts:
+#        self._rax_username = None
+#        self._rax_api_key = None
+#
+#        # AWS CLI named profile
+#        self._aws_profile_name = None
+#
+#        self._version_hash = None
+#
+#        # This will get populated when the ``yolo_file`` is read and the basic
+#        # account/stage information (including stack outputs) is read.
+#        self._context = None
+#
+#        self.some_command()
+#
+#    def some_command(self, stage='lars', account='default'):
+#        pass
+#        # read unrendered yolo_file
+#        yf = self.yolo_file
+#        # figure out which credential provider to load
+#        # select the account from the `stage` or the `account`
+#        #   you can't specify both; only one or the other
+#        if stage is not None:
+#            # Stage case
+#
+#            # If the stage isn't defined explicitly, use the default stage
+#            # config:
+#            stage_cfg = yf.stages.get(stage, yf.stages.get('default'))
+#            import pdb; pdb.set_trace()
+#            acct_cfg = yf.accounts.get(stage_cfg['account'])
+#            import pdb; pdb.set_trace()
+#        elif account is not None:
+#            pass
+#            # TODO: load acct_cfg another way
+#
+#        # Based on acct_cfg['provider'], load the appropriate credential
+#        # provider.
 
-        # Credentials for accessing FAWS accounts:
-        self._rax_username = None
-        self._rax_api_key = None
+    def __init__(self, yolo_file_path=None):
+        self.yolo_file_path = yolo_file_path
+        self.yolo_file = self._get_yolo_file(self.yolo_file_path)
 
-        # AWS CLI named profile
-        self._aws_profile_name = None
+    def _get_yolo_file(self, yolo_file_path):
+        if yolo_file_path is None:
+            # If no yolo file was specified, look for it in the current
+            # directory.
+            path = None
+            for filename in yolo.const.DEFAULT_FILENAMES:
+                full_path = os.path.abspath(
+                    os.path.join(os.getcwd(), filename)
+                )
+                if os.path.isfile(full_path):
+                    path = full_path
+                    break
+            else:
+                raise Exception(
+                    'Yolo file could not be found, please specify one '
+                    'explicitly with --yolo-file or -f')
+        else:
+            path = os.path.abspath(yolo_file_path)
 
-        self._version_hash = None
+        # self._yolo_file_path = config_path
+        return yolo.yolo_file.YoloFile.from_path(path)
 
-        # This will get populated when the ``yolo_file`` is read and the basic
-        # account/stage information (including stack outputs) is read.
-        self._context = None
+    def get_account_config(self, yolo_file, account):
+        return yolo_file.accounts.get(
+            # Get a specific account, if one is defined in the yolo config:
+            account,
+            # Or, use the default one:
+            yolo_file.accounts.get('default')
+        )
 
-        self.some_command()
+    def get_stage_config(self, yolo_file, stage):
+        return yolo_file.stages.get(
+            # Get specific stage, if one is defined in the yolo config:
+            stage,
+            # Or, use the default one:
+            yolo_file.stages.get('default')
+        )
 
-    def some_command(self, stage='lars', account='default'):
-        pass
-        # read unrendered yolo_file
-        yf = self.yolo_file
-        # figure out which credential provider to load
-        # select the account from the `stage` or the `account`
-        #   you can't specify both; only one or the other
+    def get_account_stage_config(self, yolo_file, account=None, stage=None):
         if stage is not None:
-            # Stage case
+            stage_cfg = self.get_stage_config(yolo_file, stage)
+            account_cfg = self.get_account_config(yolo_file, stage_cfg.account)
+        else:
+            stage_cfg = None
+            # No matter what, there's always an associated account.
+            account_cfg = self.get_account_config(yolo_file, account)
+        return account_cfg, stage_cfg
 
-            # If the stage isn't defined explicitly, use the default stage
-            # config:
-            stage_cfg = yf.stages.get(stage, yf.stages.get('default'))
-            import pdb; pdb.set_trace()
-            acct_cfg = yf.accounts.get(stage_cfg['account'])
-            import pdb; pdb.set_trace()
-        elif account is not None:
-            pass
-            # TODO: load acct_cfg another way
-
-        # Based on acct_cfg['provider'], load the appropriate credential
-        # provider.
-
-
-    @property
-    def yolo_file(self):
-        """Lazily load the yolo config file."""
-        if self._yolo_file is None:
-            self._yolo_file = self._get_yolo_file(self._yolo_file_path)
-        return self._yolo_file
+    def get_creds_provider(self, yolo_file, account=None, stage=None):
+        account_cfg, stage_cfg = self.get_account_stage_config(
+            yolo_file, account=account, stage=stage
+        )
+        if account_cfg.credentials.provider == 'aws':
+            return yolo.credentials.aws.AWSCredentialsProvider(
+                profile_name=account_cfg.credentials.profile
+            )
+        elif account_cfg.credentials.provider == 'faws':
+            raise Exception('not implemented')
+            # return yolo.credentials.faws.FAWSCredentialsProvider(
+            #     ???
+            #)
+        else:
+            raise yolo.exception.YoloError(
+                'Unknown credentials provider "{}"'.format(
+                    account_cfg.credentials.provider
+                )
+            )
 
     @property
     def rax_username(self):
@@ -907,6 +977,7 @@ class YoloClient(object):
             If ``true``, tear down and re-create the stack from scratch.
             Otherwise, just try to update the existing stack.
         """
+        # 1. Command-specific validation/logic:
         with_stage = stage is not None
         with_account = account is not None
 
@@ -925,8 +996,39 @@ class YoloClient(object):
             if 'account' not in self.yolo_file.templates:
                 raise YoloError('No "account" templates are defined.')
 
-        self.set_up_yolofile_context(stage=stage, account=account)
-        self._yolo_file = self.yolo_file.render(**self.context)
+        # 2. Figure out the credentials provider to use:
+        creds_provider = self.get_creds_provider(
+            self.yolo_file, account=account, stage=stage
+        )
+
+        # 3. Set up runtime context for rendering context variables in the yolo
+        #    file:
+        account_cfg, stage_cfg = self.get_account_stage_config(
+            self.yolo_file, stage=stage, account=account
+        )
+        account_number = creds_provider.get_account_number(account)
+        account_outputs = {}
+
+        if stage is not None:
+            # Only with the stage may we load account stack outputs:
+            account_outputs = self.get_account_outputs(
+                account_number,
+                account_cfg.credentials.default_region,
+            )
+
+        context = yolo.context.runtime_context(
+            account_name=account,
+            account_number=account_number,
+            account_outputs=account_outputs,
+            stage_name=stage,
+            stage_region=stage_cfg.region,
+            # We don't populate stage outputs here, because those come from the
+            # stack--and that's what we're deploying here.
+            stage_outputs=None,
+        )
+
+        # 4. Render the file yolo file:
+        self.yolo_file = self.yolo_file.render(**context)
 
         if stage is not None:
             # Deploy stage-level templates
@@ -1148,8 +1250,20 @@ class YoloClient(object):
             raise YoloError(str(err))
 
     def status(self, stage=None):
-        self.set_up_yolofile_context()
-        self._yolo_file = self.yolo_file.render(**self.context)
+        creds_provider = self.get_creds_provider(self.yolo_file, stage=stage)
+        context = yolo.context.runtime_context(
+            # TODO: what about a default account name? 'default'?
+            account_name=None,
+            account_number=creds_provider.get_account_number(None),
+            account_outputs=None,
+            stage_name=stage,
+            stage_region=None,
+            stage_outputs=None,
+        )
+        self.yolo_file = self.yolo_file.render(**context)
+
+        # self.set_up_yolofile_context()
+        # self._yolo_file = self.yolo_file.render(**self.context)
 
         # else, show status for all stages
         headers = ['StackName', 'Description', 'StackStatus']
@@ -1160,9 +1274,8 @@ class YoloClient(object):
         stack_names = set()
 
         for stg_name, account, region in stgs_accts_regions:
-            aws_account = self.yolo_file.normalize_account(account)
-            cf_client = self.aws_credentials_provider.aws_client(
-                aws_account.account_number, 'cloudformation', region_name=region
+            cf_client = creds_provider.aws_client(
+                account, 'cloudformation', region_name=region
             )
             if stg_name == YoloFile.DEFAULT_STAGE:
                 stacks_paginator = cf_client.get_paginator('list_stacks')
@@ -1184,7 +1297,7 @@ class YoloClient(object):
                 # stack.
                 stack_name = '{}-{}-{}'.format(
                     self.yolo_file.app_name,
-                    aws_account.account_number,
+                    creds_provider.get_account_number(account),
                     stg_name,
                 )
                 try:
