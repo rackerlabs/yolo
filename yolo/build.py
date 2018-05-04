@@ -90,25 +90,7 @@ def python_build_lambda_function(service_cfg):
         "Build container started, waiting for completion (ID: %s)",
         container.short_id,
     )
-    wait_for_container_to_finish(container)
-    LOG.warning("Build finished.")
-    remove_container(container)
-
-
-def wait_for_container_to_finish(container):
-    elapsed = 0
-    while container.status != STATUS_EXITED:
-        time.sleep(CONTAINER_POLL_INTERVAL)
-        # Make sure we give some feedback to the user, that things are actually
-        # happening in the background. Also, some CI systems detect the lack of
-        # output as a build failure, which we'd like to avoid.
-        elapsed += CONTAINER_POLL_INTERVAL
-        if elapsed % FEEDBACK_IN_SECONDS == 0:
-            LOG.warning("Container still running, please be patient...")
-
-        container.reload()
-
-    exit_code = container.attrs['State']['ExitCode']
+    exit_code = wait_for_container_to_finish(container)
     if exit_code != 0:
         # Save logs for further inspection -- if we are on CircleCI, save the
         # file under the artifacts directory.
@@ -136,6 +118,26 @@ def wait_for_container_to_finish(container):
             "Container exited with non-zero code. Logs saved to {}".format(
                 log_filename)
         )
+    LOG.warning("Build finished.")
+    remove_container(container)
+
+
+def wait_for_container_to_finish(container):
+    """Wait for the container to finish and return the exit code (int)."""
+    elapsed = 0
+    while container.status != STATUS_EXITED:
+        time.sleep(CONTAINER_POLL_INTERVAL)
+        # Make sure we give some feedback to the user, that things are actually
+        # happening in the background. Also, some CI systems detect the lack of
+        # output as a build failure, which we'd like to avoid.
+        elapsed += CONTAINER_POLL_INTERVAL
+        if elapsed % FEEDBACK_IN_SECONDS == 0:
+            LOG.warning("Container still running, please be patient...")
+
+        container.reload()
+
+    exit_code = container.attrs['State']['ExitCode']
+    return exit_code
 
 
 def remove_container(container):
