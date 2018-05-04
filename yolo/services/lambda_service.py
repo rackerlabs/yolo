@@ -54,7 +54,7 @@ class LambdaService(yolo.services.BaseService):
         # (which contains a snapshot of a yolo.yaml file).
         self.build_yolo_file = None
 
-    def build(self, service, stage):
+    def build(self, service, stage, build_log):
         """Create build artifacts for a Lambda-based service.
 
         :param str service:
@@ -62,6 +62,8 @@ class LambdaService(yolo.services.BaseService):
             file.
         :param str stage:
             Name of the for which the build has been created.
+        :param build_log:
+            File-like object to write build output to.
         """
         print('Building {service} for stage "{stage}"'.format(
             service=service, stage=stage
@@ -78,9 +80,9 @@ class LambdaService(yolo.services.BaseService):
             )
 
         # Use yolo's built-in Lambda build function.
-        self._python_build_lambda_function(service_cfg)
+        self._python_build_lambda_function(service_cfg, build_log)
 
-    def _python_build_lambda_function(self, service_cfg):
+    def _python_build_lambda_function(self, service_cfg, build_log):
         build_config = service_cfg['build']
         try:
             # Allow connecting to older Docker versions (e.g. CircleCI 1.0)
@@ -150,35 +152,14 @@ class LambdaService(yolo.services.BaseService):
             container.short_id,
         )
         exit_code = yolo.build.wait_for_container_to_finish(container)
-        if exit_code != 0:
-            # Save logs for further inspection -- if we are on CircleCI, save the
-            # file under the artifacts directory.
-            basepath = (
-                os.environ['CIRCLE_ARTIFACTS']
-                if 'CIRCLECI' in os.environ
-                else '.'
-            )
-            log_filename = os.path.join(
-                basepath,
-                'container_{}.log'.format(container.short_id),
-            )
-            log_contents = container.logs(stdout=True, stderr=True)
-            with open(log_filename, 'w') as fp:
-                try:
-                    fp.write(log_contents)
-                except TypeError:
-                    # On Python 3, `fp.write()` expects a string instead of bytes
-                    # (which is coming out of the `logs()` call), but Python 2
-                    # can't handle writing unicode to a file, so we can't do this
-                    # in both cases.
-                    fp.write(log_contents.decode('utf-8'))
-
-            raise Exception(
-                "Container exited with non-zero code. Logs saved to {}".format(
-                    log_filename)
-            )
-        LOG.warning("Build finished.")
+        log_contents = container.logs(stdout=True, stderr=True)
+        build_log.write(log_contents)
+        LOG.warning('Build log written to "%s"', build_log.name)
         yolo.build.remove_container(container)
+        if exit_code != 0:
+            raise Exception("Container exited with non-zero code.")
+
+        LOG.warning("Build finished.")
 
     def push(self, service, stage, bucket):
         """Push a local build of a Lambda service up into S3.

@@ -22,6 +22,7 @@ import logging
 import subprocess
 import os
 import sys
+import tempfile
 
 import botocore.exceptions
 import botocore.session
@@ -1189,14 +1190,21 @@ class YoloClient(object):
                     'deploy-infra" first.'.format(stage)
                 )
 
-    def build_lambda(self, stage, service):
-        self.set_up_yolofile_context(stage=stage)
-        self._yolo_file = self.yolo_file.render(**self.context)
+    def build_lambda(self, stage, service, build_log=None):
+        if build_log is None:
+            _, build_log_path = tempfile.mkstemp()
+            build_log = open(build_log_path, 'wa')
 
-        lambda_svc = lambda_service.LambdaService(
-            self.yolo_file, self.faws_client, self.context
-        )
-        lambda_svc.build(service, stage)
+        try:
+            self.set_up_yolofile_context(stage=stage)
+            self._yolo_file = self.yolo_file.render(**self.context)
+
+            lambda_svc = lambda_service.LambdaService(
+                self.yolo_file, self.faws_client, self.context
+            )
+            lambda_svc.build(service, stage, build_log)
+        finally:
+            build_log.close()
 
     def push(self, service, stage):
         # TODO(larsbutler): Make the "version" a parameter, so the user
