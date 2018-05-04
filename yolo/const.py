@@ -57,6 +57,7 @@ SUPPORTED_LAMBDA_RUNTIMES = [
     'go1.x',
     'nodejs4.3',
     'nodejs6.10',
+    'nodejs8.10',
     'java8',
     'dotnetcore1.0',
     'dotnetcore2.0',
