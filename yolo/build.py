@@ -1,11 +1,14 @@
 import hashlib
 import logging
 import os
+import subprocess
 import time
 
 import docker
 
 from yolo import utils
+from yolo import const
+from yolo.exceptions import YoloError
 
 LOG = logging.getLogger(__name__)
 
@@ -21,7 +24,31 @@ FEEDBACK_IN_SECONDS = 60
 STATUS_EXITED = 'exited'
 
 
-def python_build_lambda_function(service_cfg):
+def build_lambda_function(service_cfg):
+    BUILD_FUNCTIONS = dict(
+        (key, 'build_{}'.format(key.replace('.', ''))) for key in const.SUPPORTED_LAMBDA_RUNTIMES
+    )
+    runtime = service_cfg['deploy']['lambda_function_configuration']['Runtime']
+
+    BUILD_FUNCTIONS[runtime](service_cfg, runtime)
+
+
+def not_supported_yet(service_cfg, runtime):
+    raise YoloError('Runtime "{}" is not supported yet.'.format(runtime))
+
+
+def build_go1x(service_cfg, runtime):
+    # get package dependencies
+    subprocess.call('go get -t ./...', shell=True)
+    # create clean 'dist' directory
+    subprocess.call('rm -rf ./dist && mkdir ./dist', shell=True)
+    # build GO lambda bin
+    subprocess.call('GOOS=linux GOARCH=amd64 go build -o ./dist/main main.go', shell=True)
+    # zip the previously built GO package for deployment
+    subprocess.call('zip ./dist/lambda_function.zip ./dist/main', shell=True)
+
+
+def build_python(service_cfg, runtime):
     build_config = service_cfg['build']
     try:
         # Allow connecting to older Docker versions (e.g. CircleCI 1.0)
@@ -36,7 +63,6 @@ def python_build_lambda_function(service_cfg):
     dist_dir = os.path.abspath(build_config['dist_dir'])
     # List of files/dirs to include from `working_dir`
     include = build_config['include']
-    runtime = service_cfg['deploy']['lambda_function_configuration']['Runtime']
     # TODO: check if the file actually exists
     dependencies_path = os.path.join(working_dir, build_config['dependencies'])
     with open(dependencies_path) as fp:
@@ -93,6 +119,15 @@ def python_build_lambda_function(service_cfg):
     wait_for_container_to_finish(container)
     LOG.warning("Build finished.")
     remove_container(container)
+
+
+build_nodejs43 = not_supported_yet
+build_nodejs610 = not_supported_yet
+build_java8 = not_supported_yet
+build_dotnetcore10 = not_supported_yet
+build_dotnetcore20 = not_supported_yet
+build_python27 = build_python
+build_python36 = build_python
 
 
 def wait_for_container_to_finish(container):
