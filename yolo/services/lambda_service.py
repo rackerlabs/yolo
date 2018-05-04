@@ -68,7 +68,7 @@ class LambdaService(yolo.services.BaseService):
             )
 
         # Use yolo's built-in Lambda build function.
-        yolo.build.build_lambda_function(service_cfg)
+        yolo.build.python_build_lambda_function(service_cfg)
 
     def push(self, service, stage, bucket):
         """Push a local build of a Lambda service up into S3.
