@@ -6,4 +6,4 @@ Resources:
   HelloWorldBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !ref BucketName
+      BucketName: !Ref BucketName

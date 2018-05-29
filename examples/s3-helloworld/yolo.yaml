@@ -3,7 +3,7 @@ templates:
   stage:
     path: '.'
     params:
-      BucketName: 's3-helloworld-{{ account.account_number }}'
+      BucketName: 's3-test-bucket-{{ account.account_number }}'
 #stages:
 #  default:
 #    region: 'us-east-1'
