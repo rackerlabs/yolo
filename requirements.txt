@@ -7,6 +7,7 @@ jinja2
 keyring==8.7.0
 keyrings.alt
 pyyaml
+ruamel.yaml
 requests
 ruamel.yaml
 # tabulate
