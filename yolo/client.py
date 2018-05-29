@@ -1453,26 +1453,30 @@ class YoloClient(object):
         )
 
         # Precedence for setting params:
+        #   - use default (if available), possibly calculating it from context
+        #     variables
         #   - copy from target stage (if applicable)
-        #   - use default (if available)
         #   - prompt for value
         for param_item in parameters:
             param_name = param_item['name']
             param_value = None
 
-            # If --copy-from-stage option was specified:
-            if copy_from_stage is not None:
-                if param_name in copied_params:
-                    # Maybe we can get the value from the copied params.
-                    param_value = copied_params[param_name]
             # If --use-defaults is set:
-            elif use_defaults:
+            if use_defaults:
                 # Look for a default value from the yolo.yml. There might not
                 # be one.
                 param_value = param_item.get('value')
 
+            # If param has no value yet and --copy-from-stage option was
+            # specified:
+            if param_value is None and copy_from_stage is not None:
+                if param_name in copied_params:
+                    # Maybe we can get the value from the copied params.
+                    param_value = copied_params[param_name]
+
             # We couldn't get a value for the param from either another stage
-            # or
+            # or from default/calculated values. We need to prompt the user for
+            # the parameter value:
             if param_value is None:
                 # If it's a multiline param, use an appropriate multiline
                 # prompt.
