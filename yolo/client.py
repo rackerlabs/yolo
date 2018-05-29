@@ -140,6 +140,9 @@ class YoloClient(object):
         self.yolo_file_path = yolo_file_path
         self.yolo_file = self._get_yolo_file(self.yolo_file_path)
 
+        self.creds_provider = None
+        self.context = None
+
     def _get_yolo_file(self, yolo_file_path):
         if yolo_file_path is None:
             # If no yolo file was specified, look for it in the current
@@ -251,14 +254,6 @@ class YoloClient(object):
         return self._aws_profile_name
 
     @property
-    def context(self):
-        """Environment context for commands and template rendering."""
-        if self._context is None:
-            raise RuntimeError('Environment context is not yet loaded!')
-        else:
-            return self._context
-
-    @property
     def aws_credentials_provider(self):
         """Lazily instantiate an provider object.
 
@@ -354,7 +349,10 @@ class YoloClient(object):
             )
 
     def get_account_outputs(self, account_number, region):
-        cf_client = self.aws_credentials_provider.aws_client(account_number, 'cloudformation', region)
+        cf_client = self.creds_provider.aws_client(
+            account_number, 'cloudformation', region_name=region,
+        )
+        # cf_client = self.aws_credentials_provider.aws_client(account_number, 'cloudformation', region)
         cf = CloudFormation(cf_client)
         stack_name = self.get_account_stack_name(account_number)
         # Full account-level data might not be available, when the baseline
@@ -543,9 +541,10 @@ class YoloClient(object):
         :returns:
             :class:`boto3.resources.factory.s3.Bucket` instance.
         """
-        s3_client = self.aws_credentials_provider.aws_client(
-            acct_num, 's3', region_name=region
-        )
+        s3_client = self.creds_provider.aws_client(acct_num, 's3', region_name=region)
+        #s3_client = self.aws_credentials_provider.aws_client(
+        #    acct_num, 's3', region_name=region
+        #)
         try:
             print('checking for bucket {}...'.format(bucket_name))
             s3_client.head_bucket(Bucket=bucket_name)
@@ -566,7 +565,7 @@ class YoloClient(object):
                         'LocationConstraint': region
                     }
                 s3_client.create_bucket(**create_bucket_kwargs)
-        s3 = self.aws_credentials_provider.boto3_session(acct_num).resource('s3', region_name=region)
+        s3 = self.creds_provider.aws_resource(acct_num, 's3', region_name=region)
         bucket = s3.Bucket(bucket_name)
         return bucket
 
@@ -1000,6 +999,7 @@ class YoloClient(object):
         creds_provider = self.get_creds_provider(
             self.yolo_file, account=account, stage=stage
         )
+        self.creds_provider = creds_provider
 
         # 3. Set up runtime context for rendering context variables in the yolo
         #    file:
@@ -1026,6 +1026,7 @@ class YoloClient(object):
             # stack--and that's what we're deploying here.
             stage_outputs=None,
         )
+        self.context = context
 
         # 4. Render the file yolo file:
         self.yolo_file = self.yolo_file.render(**context)
@@ -1220,11 +1221,16 @@ class YoloClient(object):
                 ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
             )
 
-        cf_client = self.aws_credentials_provider.aws_client(
+        cf_client = self.creds_provider.aws_client(
             self.context.account.account_number,
             'cloudformation',
             region_name=region,
         )
+        #cf_client = self.aws_credentials_provider.aws_client(
+        #    self.context.account.account_number,
+        #    'cloudformation',
+        #    region_name=region,
+        #)
         # TODO(larsbutler): detect json, yaml, or yml for the master.* file.
         # Defaults to master.yaml for now.
         # TODO(larsbutler): Check for master.* template file and show a nice

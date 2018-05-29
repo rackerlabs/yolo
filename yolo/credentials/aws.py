@@ -40,7 +40,9 @@ class AWSCredentialsProvider(object):
             # Next, check if a profile name was provided and get the creds from
             # that profile.
             # If no explicit profile name was given, try the "default" profile.
-            profile_creds = self.boto3_session.get_credentials()
+            profile_creds = boto3.session.Session(
+                profile_name=self._profile_name
+            ).get_credentials()
             if profile_creds is None:
                 # If this is None, no matching profile for `self._profile_name`
                 # was found in `~/.aws/credentials`, essentially.
@@ -62,10 +64,17 @@ class AWSCredentialsProvider(object):
             aws_session_token=session_token,
         )
 
-    @property
-    def boto3_session(self):
+    def boto3_session(self, aws_account):
+        """
+        :param str aws_account:
+            AWS account number. Not used by this provider.
+        """
+        creds = self.get_aws_account_credentials(aws_account)
         if self._session is None:
             self._session = boto3.session.Session(
+                aws_access_key_id=creds.aws_access_key_id,
+                aws_secret_access_key=creds.aws_secret_access_key,
+                aws_session_token=creds.aws_session_token,
                 profile_name=self._profile_name
             )
         return self._session
@@ -84,11 +93,20 @@ class AWSCredentialsProvider(object):
             aws_account, 'sts'
         ).get_caller_identity().get('Account')
 
-    def aws_client(self, aws_account, aws_service, region_name=None, **kwargs):
+    def aws_client(self, aws_account, service, region_name=None, **kwargs):
         """
-        :param aws_account:
-            Ignored.
+        :param str aws_account:
+            AWS account number. Not used by this provider.
         """
-        return self.boto3_session.client(
-            aws_service, region_name=region_name, **kwargs
+        return self.boto3_session(aws_account).client(
+            service, region_name=region_name, **kwargs
+        )
+
+    def aws_resource(self, aws_account, resource, region_name=None, **kwargs):
+        """
+        :param str aws_account:
+            AWS account number. Not used by this provider.
+        """
+        return self.boto3_session(aws_account).resource(
+            resource, region_name=region_name, **kwargs
         )
