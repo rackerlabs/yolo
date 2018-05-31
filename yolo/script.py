@@ -249,6 +249,14 @@ def status(yolo_file=None, **kwargs):
 @service_option(required=True)
 @stage_option(required=True)
 @yolo_file_option()
+@click.option(
+    '--build-log',
+    '-b',
+    metavar='BUILD_LOG',
+    type=click.File('wa'),
+    required=False,
+    help='Target to file to save build logs',
+)
 @handle_yolo_errors
 def build_lambda(yolo_file=None, **kwargs):
     """Build Lambda function packages."""

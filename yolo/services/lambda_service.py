@@ -12,11 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import hashlib
 import logging
 import os
 import tempfile
 
 import botocore.exceptions
+import docker
 import tabulate
 from ruamel import yaml
 
@@ -29,6 +31,14 @@ from yolo import utils
 from yolo import yolo_file
 
 LOG = logging.getLogger(__name__)
+
+# On docker hub: https://hub.docker.com/r/larsbutler/yolo/
+BUILD_IMAGE = 'larsbutler/yolo:python'
+PYTHON_VERSION_MAP = {
+    # cp27-mu is compiled with ucs4 support which is the same as Lambda
+    'python2.7': 'cp27-cp27mu',
+    'python3.6': 'cp36-cp36m',
+}
 
 
 class LambdaService(yolo.services.BaseService):
@@ -44,7 +54,7 @@ class LambdaService(yolo.services.BaseService):
         # (which contains a snapshot of a yolo.yaml file).
         self.build_yolo_file = None
 
-    def build(self, service, stage):
+    def build(self, service, stage, build_log):
         """Create build artifacts for a Lambda-based service.
 
         :param str service:
@@ -52,6 +62,8 @@ class LambdaService(yolo.services.BaseService):
             file.
         :param str stage:
             Name of the for which the build has been created.
+        :param build_log:
+            File-like object to write build output to.
         """
         print('Building {service} for stage "{stage}"'.format(
             service=service, stage=stage
@@ -68,7 +80,86 @@ class LambdaService(yolo.services.BaseService):
             )
 
         # Use yolo's built-in Lambda build function.
-        yolo.build.python_build_lambda_function(service_cfg)
+        self._python_build_lambda_function(service_cfg, build_log)
+
+    def _python_build_lambda_function(self, service_cfg, build_log):
+        build_config = service_cfg['build']
+        try:
+            # Allow connecting to older Docker versions (e.g. CircleCI 1.0)
+            client = docker.from_env(version='auto')
+        except Exception:
+            LOG.error("Docker is not running, or it's outdated.")
+            raise
+
+        # TODO: check if the dir actually exists
+        working_dir = os.path.abspath(build_config['working_dir'])
+
+        dist_dir = os.path.abspath(build_config['dist_dir'])
+        # List of files/dirs to include from `working_dir`
+        include = build_config['include']
+        runtime = service_cfg['deploy']['lambda_function_configuration']['Runtime']
+        # TODO: check if the file actually exists
+        dependencies_path = os.path.join(working_dir, build_config['dependencies'])
+        with open(dependencies_path) as fp:
+            dependencies_sha1 = hashlib.sha1(fp.read().encode('utf-8')).hexdigest()
+
+        environment = {
+            'INCLUDE': ' '.join(include),
+            # TODO: deal wtih this
+            # 'EXTRA_PACKAGES': '',
+            'PY_VERSION': PYTHON_VERSION_MAP[runtime],
+            'VERSION_HASH': utils.get_version_hash(),
+            'BUILD_TIME': utils.now_timestamp(),
+        }
+        # TODO(larsbutler): make these file/dir names constants
+        build_cache_dir = os.path.join(working_dir, '.yolo_build_cache')
+        build_cache_version_file = os.path.join(
+            build_cache_dir, 'cache_version.sha1'
+        )
+
+        LOG.warning('Checking dependencies cache...')
+        # Decide if we need to rebuild dependencies based on cache contents:
+        if os.path.isfile(build_cache_version_file):
+            # Check the current cache version
+            with open(build_cache_version_file) as fp:
+                build_cache_version = fp.read().strip()
+            LOG.warning('Existing build cache version is %s', build_cache_version)
+
+            if dependencies_sha1 != build_cache_version:
+                # We must rebuild:
+                LOG.warning(
+                    'Build cache version mismatch. Rebuilding dependencies.'
+                )
+                environment['REBUILD_DEPENDENCIES'] = '1'
+        else:
+            # No cache found; we must build deps.
+            environment['REBUILD_DEPENDENCIES'] = '1'
+
+        container = client.containers.run(
+            image=BUILD_IMAGE,
+            # command='/bin/bash -c "./build_wheels.sh"',
+            detach=True,
+            environment=environment,
+            volumes={
+                working_dir: {'bind': '/src'},
+                dependencies_path: {'bind': '/dependencies/requirements.txt'},
+                dist_dir: {'bind': '/dist'},
+                build_cache_dir: {'bind': '/build_cache'},
+            },
+        )
+        LOG.warning(
+            "Build container started, waiting for completion (ID: %s)",
+            container.short_id,
+        )
+        exit_code = yolo.build.wait_for_container_to_finish(container)
+        log_contents = container.logs(stdout=True, stderr=True)
+        build_log.write(log_contents)
+        LOG.warning('Build log written to "%s"', build_log.name)
+        yolo.build.remove_container(container)
+        if exit_code != 0:
+            raise Exception("Container exited with non-zero code.")
+
+        LOG.warning("Build finished.")
 
     def push(self, service, stage, bucket):
         """Push a local build of a Lambda service up into S3.
