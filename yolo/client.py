@@ -1193,7 +1193,7 @@ class YoloClient(object):
     def build_lambda(self, stage, service, build_log=None):
         if build_log is None:
             _, build_log_path = tempfile.mkstemp()
-            build_log = open(build_log_path, 'wa')
+            build_log = open(build_log_path, 'a')
 
         try:
             self.set_up_yolofile_context(stage=stage)
