@@ -253,7 +253,7 @@ def status(yolo_file=None, **kwargs):
     '--build-log',
     '-b',
     metavar='BUILD_LOG',
-    type=click.File('wa'),
+    type=click.File('a'),
     required=False,
     help='Target to file to save build logs',
 )
