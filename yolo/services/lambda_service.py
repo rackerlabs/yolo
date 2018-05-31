@@ -153,7 +153,7 @@ class LambdaService(yolo.services.BaseService):
         )
         exit_code = yolo.build.wait_for_container_to_finish(container)
         log_contents = container.logs(stdout=True, stderr=True)
-        build_log.write(log_contents)
+        build_log.write(log_contents.decode('utf-8'))
         LOG.warning('Build log written to "%s"', build_log.name)
         yolo.build.remove_container(container)
         if exit_code != 0:
