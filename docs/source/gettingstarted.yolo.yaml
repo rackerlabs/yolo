@@ -68,7 +68,7 @@ services:
         Handler: 'lambda_main.lambda_handler'
         Description: 'My Application'
         Timeout: 30
-        Memory: 512
+        MemorySize: 512
         VpcConfig: {}
         Runtime: 'python3.6'
         TracingConfig:
