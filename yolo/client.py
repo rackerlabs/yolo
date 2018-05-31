@@ -136,8 +136,8 @@ class YoloClient(object):
 #        # Based on acct_cfg['provider'], load the appropriate credential
 #        # provider.
 
-    def __init__(self, yolo_file_path=None):
-        self.yolo_file_path = yolo_file_path
+    def __init__(self, yolo_file=None):
+        self.yolo_file_path = yolo_file
         self.yolo_file = self._get_yolo_file(self.yolo_file_path)
 
         self.creds_provider = None
@@ -166,11 +166,14 @@ class YoloClient(object):
         return yolo.yolo_file.YoloFile.from_path(path)
 
     def get_account_config(self, yolo_file, account):
-        return yolo_file.accounts.get(
+        acct_map = {}
+        for acct in yolo_file.accounts:
+            acct_map[acct.name] = acct
+        return acct_map.get(
             # Get a specific account, if one is defined in the yolo config:
             account,
             # Or, use the default one:
-            yolo_file.accounts.get('default')
+            acct_map.get('default')
         )
 
     def get_stage_config(self, yolo_file, stage):
@@ -1343,6 +1346,40 @@ class YoloClient(object):
             build_log = open(build_log_path, 'a')
 
         try:
+            # TODO(larsbutler, 11-Jul-2018): Put this whole try block in a
+            # separate method.
+            creds_provider = self.get_creds_provider(
+                self.yolo_file, stage=stage
+            )
+            self.creds_provider = creds_provider
+            account_cfg, stage_cfg = self.get_account_stage_config(
+                self.yolo_file, stage=stage
+            )
+            account_number = creds_provider.get_account_number(
+                account_cfg.account_number
+            )
+            account_outputs = self.get_account_outputs(
+                account_number,
+                account_cfg.credentials.default_region,
+            )
+            stage_outputs = self.get_stage_outputs(
+                account_number,
+                account_cfg.credentials.default_region,
+                stage,
+            )
+            context = yolo.context.runtime_context(
+                account_name=account,
+                account_number=account_number,
+                account_outputs=account_outputs,
+                stage_name=stage,
+                stage_region=stage_cfg.region,
+                # We don't populate stage outputs here, because those come from the
+                # stack--and that's what we're deploying here.
+                stage_outputs=None,
+            )
+
+            self._yolo_file = self.yolo_file.render(**self.context)
+
             lambda_svc = lambda_service.LambdaService(
                 self.yolo_file, self.aws_credentials_provider, self.context
             )
