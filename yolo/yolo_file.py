@@ -45,7 +45,7 @@ class YoloFile(object):
 
     # 'accounts' section
     ACCOUNT_SCHEMA = volup.Schema({
-        # volup.Required('name'): STRING_SCHEMA,
+        volup.Required('name'): STRING_SCHEMA,
         volup.Required('account_number', default=None): volup.Any(
             STRING_SCHEMA, None
         ),
@@ -60,7 +60,7 @@ class YoloFile(object):
         }),
     })
     # account-name: account-config
-    ACCOUNTS_SCHEMA = volup.Schema({STRING_SCHEMA: ACCOUNT_SCHEMA})
+    ACCOUNTS_SCHEMA = volup.Schema([ACCOUNT_SCHEMA])
     # 'templates' section
     ACCOUNT_TEMPLATE_SCHEMA = volup.Schema({
         volup.Required('path'): STRING_SCHEMA,
@@ -194,14 +194,13 @@ class YoloFile(object):
             },
         }
     })
-    DEFAULT_ACCOUNTS = {
-        'default': {
-            'credentials': {
-                'provider': 'aws',
-                'profile': 'default',
-            }
+    DEFAULT_ACCOUNTS = [{
+        'name': 'default',
+        'credentials': {
+            'provider': 'aws',
+            'profile': 'default',
         }
-    }
+    }]
     DEFAULT_STAGES = {
         'default': {
             'account': 'default',
