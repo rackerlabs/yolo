@@ -51,3 +51,13 @@ BUCKET_FOLDER_PREFIXES = {
 # This tells deployed applications where to find config/secrets in SSM.
 SSM_CONFIG_VERSION = 'SSM_CONFIG_VERSION'
 S3_UPLOAD_EXTRA_ARGS = dict(ACL='private', ServerSideEncryption='AES256')
+SUPPORTED_LAMBDA_RUNTIMES = [
+    'python2.7',
+    'python3.6',
+    'go1.x',
+    'nodejs6.10',
+    'nodejs8.10',
+    'java8',
+    'dotnetcore1.0',
+    'dotnetcore2.0',
+]
