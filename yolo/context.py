@@ -52,6 +52,7 @@ def runtime_context(
         ctx.version_hash = version_hash
 
     ctx.account = DottedDict()
+    ctx.account.outputs = {}
     if account_name is not None:
         ctx.account.name = account_name
     if account_number is not None:
@@ -60,6 +61,7 @@ def runtime_context(
         ctx.account.outputs = account_outputs
 
     ctx.stage = DottedDict()
+    ctx.stage.outputs = {}
     if stage_name is not None:
         ctx.stage.name = stage_name
     if stage_region is not None:
