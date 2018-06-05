@@ -66,7 +66,7 @@ if PY27:
     input = raw_input  # noqa
 
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.INFO,
     format=('%(asctime)s [%(levelname)s] '
             '[%(name)s.%(funcName)s:%(lineno)d]: %(message)s'),
     datefmt='%Y-%m-%d %H:%M:%S'
@@ -340,16 +340,22 @@ class YoloClient(object):
         return service_client
 
     def get_stage_outputs(self, account_number, region, stage):
-        cf_client = self.aws_credentials_provider.aws_client(account_number, 'cloudformation', region)
+        cf_client = self.creds_provider.aws_client(
+            account_number, 'cloudformation', region_name=region,
+        )
+        # cf_client = self.aws_credentials_provider.aws_client(account_number, 'cloudformation', region)
         cf = CloudFormation(cf_client)
         stack_name = self.get_stage_stack_name(account_number, stage)
         try:
             return cf.get_stack_outputs(stack_name=stack_name)
         except StackDoesNotExist:
-            raise YoloError(
-                'Stage infrastructure stack does not exist; please run '
-                '"yolo deploy-infra --stage {}" first.'.format(stage)
+            LOG.warning(
+                'Stage infrastructure stack does not exist. You may need to '
+                'run "yolo deploy-infra --stage %s".',
+                stage,
             )
+        return {}
+
 
     def get_account_outputs(self, account_number, region):
         cf_client = self.creds_provider.aws_client(
@@ -364,11 +370,12 @@ class YoloClient(object):
         try:
             return cf.get_stack_outputs(stack_name=stack_name)
         except StackDoesNotExist:
-            LOG.info(
-                'Account-level stack does not exist yet for account %s,',
-                account_number
+            LOG.warning(
+                'Account-level infrastructure stack does not exist. You may '
+                'need to run "yolo deploy-infra --account %s".',
+                account_number,
             )
-            return {}
+        return {}
 
     def _get_metadata(self):
         return {
@@ -1368,17 +1375,16 @@ class YoloClient(object):
                 stage,
             )
             context = yolo.context.runtime_context(
-                account_name=account,
+                account_name=account_cfg.name,
                 account_number=account_number,
                 account_outputs=account_outputs,
                 stage_name=stage,
                 stage_region=stage_cfg.region,
-                # We don't populate stage outputs here, because those come from the
-                # stack--and that's what we're deploying here.
-                stage_outputs=None,
+                stage_outputs=stage_outputs,
             )
+            self.context = context
 
-            self._yolo_file = self.yolo_file.render(**self.context)
+            self.yolo_file = self.yolo_file.render(**self.context)
 
             lambda_svc = lambda_service.LambdaService(
                 self.yolo_file, self.aws_credentials_provider, self.context
