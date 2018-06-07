@@ -47,6 +47,7 @@ config = dict(
         'stages/accounts'
     ),
     packages=find_packages(exclude=['yolo.tests', 'yolo.tests.*']),
+    include_package_data=True,
     entry_points={'console_scripts': ['yolo=yolo.script:cli']},
     install_requires=[
         'awscli',
