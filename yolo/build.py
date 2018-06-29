@@ -96,33 +96,3 @@ def export_container_files(container, src_path, dst_path):
 
     with tarfile.open(fileobj=stream, mode='r') as tar:
         tar.extractall(path=dst_path)
-
-
-def export_build_cache(container, dst_path):
-    # Copy build_cache from a container to a local directory.
-    stream = io.BytesIO()
-    tar_generator, _ = container.get_archive('/build_cache/.',
-                                             chunk_size=1024*1024*2)
-
-    for bytes in tar_generator:
-        stream.write(bytes)
-    else:
-        stream.seek(0)
-
-    with tarfile.open(fileobj=stream, mode='r') as tar:
-        tar.extractall(path=dst_path)
-
-
-def export_lambda_package(container, dst_path):
-    # Copy lambda zip from a container to a local directory.
-    stream = io.BytesIO()
-    tar_generator, _ = container.get_archive('/dist/lambda_function.zip',
-                                             chunk_size=1024*1024*2)
-
-    for bytes in tar_generator:
-        stream.write(bytes)
-    else:
-        stream.seek(0)
-
-    with tarfile.open(fileobj=stream, mode='r') as tar:
-        tar.extractall(path=dst_path)
