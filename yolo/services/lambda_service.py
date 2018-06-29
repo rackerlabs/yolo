@@ -164,10 +164,18 @@ class LambdaService(yolo.services.BaseService):
         )
         exit_code = yolo.build.wait_for_container_to_finish(container)
         LOG.warning("exporting build cache...")
-        yolo.build.export_build_cache(build_volume_container, build_cache_dir)
+        yolo.build.export_container_files(
+            build_volume_container,
+            '/build_cache/.',
+            build_cache_dir
+        )
         LOG.warning("done exporting build cache.")
         LOG.warning("exporting lambda zip...")
-        yolo.build.export_lambda_package(build_volume_container, dist_dir)
+        yolo.build.export_container_files(
+            build_volume_container,
+            '/dist/lambda_function.zip',
+            dist_dir
+        )
         LOG.warning("done exporting lambda zip.")
         log_contents = container.logs(stdout=True, stderr=True)
         build_log.write(log_contents.decode('utf-8'))
