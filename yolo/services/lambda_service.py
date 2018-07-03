@@ -135,27 +135,54 @@ class LambdaService(yolo.services.BaseService):
             # No cache found; we must build deps.
             environment['REBUILD_DEPENDENCIES'] = '1'
 
+        build_volume_container = yolo.build.create_build_volume_container(
+            client,
+            working_dir=working_dir,
+            dependencies_path=dependencies_path,
+            dist_dir=dist_dir,
+            build_cache_dir=build_cache_dir)
+        LOG.warning(
+            "build_volume_container created (%s)",
+            build_volume_container.short_id
+        )
+
         container = client.containers.run(
             image=BUILD_IMAGE,
             # command='/bin/bash -c "./build_wheels.sh"',
             detach=True,
             environment=environment,
-            volumes={
-                working_dir: {'bind': '/src'},
-                dependencies_path: {'bind': '/dependencies/requirements.txt'},
-                dist_dir: {'bind': '/dist'},
-                build_cache_dir: {'bind': '/build_cache'},
-            },
+            volumes_from=[build_volume_container.id]
         )
+
+        LOG.warning("working_dir is %s", working_dir)
+        LOG.warning("dependencies_path is %s", dependencies_path)
+        LOG.warning("dist_dir is %s", dist_dir)
+        LOG.warning("build_cache_dir is %s", build_cache_dir)
         LOG.warning(
             "Build container started, waiting for completion (ID: %s)",
             container.short_id,
         )
         exit_code = yolo.build.wait_for_container_to_finish(container)
+        LOG.warning("exporting build cache...")
+        yolo.build.export_container_files(
+            build_volume_container,
+            '/build_cache/.',
+            build_cache_dir
+        )
+        LOG.warning("done exporting build cache.")
+        LOG.warning("exporting lambda zip...")
+        yolo.build.export_container_files(
+            build_volume_container,
+            '/dist/lambda_function.zip',
+            dist_dir
+        )
+        LOG.warning("done exporting lambda zip.")
         log_contents = container.logs(stdout=True, stderr=True)
         build_log.write(log_contents.decode('utf-8'))
         LOG.warning('Build log written to "%s"', build_log.name)
         yolo.build.remove_container(container)
+        # remove the container and its volumes
+        yolo.build.remove_container(build_volume_container, v=True)
         if exit_code != 0:
             raise Exception("Container exited with non-zero code.")
 

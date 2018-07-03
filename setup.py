@@ -53,7 +53,7 @@ config = dict(
         'boto3',
         'botocore>=1.7.18',
         'click',
-        'docker==2.5.1',
+        'docker==3.4.0',
         'jinja2',
         'keyring==8.7.0',
         'keyrings.alt',
