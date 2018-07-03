@@ -18,6 +18,11 @@ ENV LIBXSLT_VERSION="1.1.29"
 #   - /src: root of the src/repo to pull in for the build
 #   - /dist: contains the output lambda_function.zip
 
+# Make sure /dependencies/requirements.txt is a file!
+# See https://docs.docker.com/storage/bind-mounts/#differences-between--v-and---mount-behavior.
+RUN mkdir /dependencies
+RUN touch /dependencies/requirements.txt
+
 ENV CFLAGS="-I/openssl/include -I/libffi/lib/libffi-${LIBFFI_VERSION}/include"
 ENV LDFLAGS="-L/openssl/lib -L/libffi/lib64"
 ENV LD_LIBRARY_PATH="/libffi/lib64"
