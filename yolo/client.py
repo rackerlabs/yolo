@@ -162,7 +162,6 @@ class YoloClient(object):
         else:
             path = os.path.abspath(yolo_file_path)
 
-        # self._yolo_file_path = config_path
         return yolo.yolo_file.YoloFile.from_path(path)
 
     def get_account_config(self, yolo_file, account):
@@ -255,28 +254,6 @@ class YoloClient(object):
         # We can allow this value to be None, because in that case we'll
         # fallback to FAWS credentials.
         return self._aws_profile_name
-
-    @property
-    def aws_credentials_provider(self):
-        """Lazily instantiate an provider object.
-
-        In essence, this provides an abstract and generalized way of fetching
-        credentials for connecting to the AWS API.
-        """
-        if self._faws_client is None:
-            # NOTE(szilveszter): This is just a quick hack, because I wanted
-            # to avoid refactoring everything. If this ends up being a good
-            # approach, I'm happy to do the work.
-            # If we have a profile stored, let's use it instead of going to
-            # FAWS first.
-            if self.aws_profile_name:
-                self._faws_client = AWSCLICredentials(self.aws_profile_name)
-            else:
-                self._faws_client = faws_client.FAWSClient(
-                    self.rax_username, self.rax_api_key
-                )
-
-        return self._faws_client
 
     @property
     def version_hash(self):
@@ -464,16 +441,6 @@ class YoloClient(object):
             stage,
         )
 
-    def get_aws_account_credentials(self, account_number):
-        creds = self.aws_credentials_provider.get_aws_account_credentials(account_number)
-        cred = creds['credential']
-        cred_vars = dict(
-            AWS_ACCESS_KEY_ID=cred['accessKeyId'],
-            AWS_SECRET_ACCESS_KEY=cred['secretAccessKey'],
-            AWS_SESSION_TOKEN=cred['sessionToken'],
-        )
-        return cred_vars
-
     def _get_yolo_file(self, yolo_file):
         if yolo_file is None:
             # If no yolo file was specified, look for it in the current
@@ -541,9 +508,6 @@ class YoloClient(object):
             :class:`boto3.resources.factory.s3.Bucket` instance.
         """
         s3_client = self.creds_provider.aws_client(acct_num, 's3', region_name=region)
-        #s3_client = self.aws_credentials_provider.aws_client(
-        #    acct_num, 's3', region_name=region
-        #)
         try:
             print('checking for bucket {}...'.format(bucket_name))
             s3_client.head_bucket(Bucket=bucket_name)
@@ -1217,11 +1181,6 @@ class YoloClient(object):
             'cloudformation',
             region_name=region,
         )
-        #cf_client = self.aws_credentials_provider.aws_client(
-        #    self.context.account.account_number,
-        #    'cloudformation',
-        #    region_name=region,
-        #)
         # TODO(larsbutler): detect json, yaml, or yml for the master.* file.
         # Defaults to master.yaml for now.
         # TODO(larsbutler): Check for master.* template file and show a nice
@@ -1340,6 +1299,7 @@ class YoloClient(object):
                 self.yolo_file, stage=stage
             )
             self.creds_provider = creds_provider
+
             account_cfg, stage_cfg = self.get_account_stage_config(
                 self.yolo_file, stage=stage
             )
@@ -1355,7 +1315,7 @@ class YoloClient(object):
                 account_cfg.credentials.default_region,
                 stage,
             )
-            context = yolo.context.runtime_context(
+            self.context = yolo.context.runtime_context(
                 account_name=account_cfg.name,
                 account_number=account_number,
                 account_outputs=account_outputs,
@@ -1363,14 +1323,13 @@ class YoloClient(object):
                 stage_region=stage_cfg.region,
                 stage_outputs=stage_outputs,
             )
-            self.context = context
 
             self.yolo_file = self.yolo_file.render(**self.context)
 
             lambda_svc = lambda_service.LambdaService(
-                self.yolo_file, self.aws_credentials_provider, self.context
+                self.yolo_file, self.creds_provider, self.context
             )
-            lambda_svc.build(service, stage)
+            lambda_svc.build(service, stage, build_log)
         finally:
             build_log.close()
 
@@ -1505,7 +1464,7 @@ class YoloClient(object):
         )
 
         s3_svc = s3_service.S3Service(
-            self.yolo_file, self.aws_credentials_provider, self.context
+            self.yolo_file, self.creds_provider, self.context
         )
         s3_svc.deploy(service, stage, version, bucket)
 
