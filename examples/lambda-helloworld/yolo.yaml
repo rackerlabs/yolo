@@ -1,8 +1,9 @@
 name: lambda-helloworld
 templates:
   stage:
-    path: '.'
-    params: {}
+    path: 'stage-templates'
+  account:
+    path: 'account-templates'
 services:
   MyLambdaService:
     type: 'lambda'
