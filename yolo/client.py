@@ -48,7 +48,6 @@ import yolo.yolo_file
 
 from yolo.cloudformation import CloudFormation
 from yolo import const
-from yolo.credentials.aws_cli import AWSCLICredentials
 import yolo.exceptions
 from yolo.exceptions import NoInfrastructureError
 from yolo.exceptions import StackDoesNotExist
