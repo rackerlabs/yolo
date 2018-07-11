@@ -51,3 +51,5 @@ BUCKET_FOLDER_PREFIXES = {
 # This tells deployed applications where to find config/secrets in SSM.
 SSM_CONFIG_VERSION = 'SSM_CONFIG_VERSION'
 S3_UPLOAD_EXTRA_ARGS = dict(ACL='private', ServerSideEncryption='AES256')
+
+API_GATEWAY_INTEGRATION_AWS = 'AWS'
