@@ -311,7 +311,7 @@ class YoloClient(object):
     def _get_service_client(self, service):
         service_cfg = self._get_service_cfg(service)
         service_client = SERVICE_TYPE_MAP[service_cfg['type']](
-            self.yolo_file, self.aws_credentials_provider, self.context
+            self.yolo_file, self.creds_provider, self.context
             # TODO: add timeout
         )
         return service_client
