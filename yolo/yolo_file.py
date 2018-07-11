@@ -64,11 +64,11 @@ class YoloFile(object):
     # 'templates' section
     ACCOUNT_TEMPLATE_SCHEMA = volup.Schema({
         volup.Required('path'): STRING_SCHEMA,
-        volup.Optional('params'): {STRING_SCHEMA: STRING_SCHEMA},
+        volup.Optional('params', default={}): {STRING_SCHEMA: STRING_SCHEMA},
     })
     STAGE_TEMPLATE_SCHEMA = volup.Schema({
         volup.Required('path'): STRING_SCHEMA,
-        volup.Optional('params'): {STRING_SCHEMA: STRING_SCHEMA},
+        volup.Optional('params', default={}): {STRING_SCHEMA: STRING_SCHEMA},
     })
     TEMPLATES_SCHEMA = volup.Schema({
         volup.Optional('account'): ACCOUNT_TEMPLATE_SCHEMA,

@@ -7,8 +7,8 @@ from dotted_dict import DottedDict
 
 def runtime_context(
         timestamp=None, version_hash=None, account_name=None,
-        account_number=None, stage_name=None, stage_region=None,
-        account_outputs=None, stage_outputs=None):
+        account_number=None, account_region=None, account_outputs=None,
+        stage_name=None, stage_region=None, stage_outputs=None):
     """
     :param str timestamp:
         ISO standard UTC timestamp. Example: "2018-04-20T10:33:18.797374".
@@ -19,6 +19,8 @@ def runtime_context(
         Name of the current account as it is defined in the yolo.yaml.
     :param str account_number:
         Account number of the current AWS account.
+    :param str account_region:
+        Default region for this account.
     :param dict account_outputs:
         Key/value pairs of output-name/output-value from account stacks.
 
@@ -59,6 +61,8 @@ def runtime_context(
         ctx.account.account_number = account_number
     if account_outputs is not None:
         ctx.account.outputs = account_outputs
+    if account_region is not None:
+        ctx.account.default_region = account_region
 
     ctx.stage = DottedDict()
     ctx.stage.outputs = {}
