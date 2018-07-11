@@ -118,6 +118,7 @@ class LambdaService(yolo.services.BaseService):
         )
 
         LOG.warning('Checking dependencies cache...')
+        has_to_rebuild_cache = False
         # Decide if we need to rebuild dependencies based on cache contents:
         if os.path.isfile(build_cache_version_file):
             # Check the current cache version
@@ -131,9 +132,11 @@ class LambdaService(yolo.services.BaseService):
                     'Build cache version mismatch. Rebuilding dependencies.'
                 )
                 environment['REBUILD_DEPENDENCIES'] = '1'
+                has_to_rebuild_cache = True
         else:
             # No cache found; we must build deps.
             environment['REBUILD_DEPENDENCIES'] = '1'
+            has_to_rebuild_cache = True
 
         build_volume_container = yolo.build.create_build_volume_container(
             client,
@@ -163,13 +166,16 @@ class LambdaService(yolo.services.BaseService):
             container.short_id,
         )
         exit_code = yolo.build.wait_for_container_to_finish(container)
-        LOG.warning("exporting build cache...")
-        yolo.build.export_container_files(
-            build_volume_container,
-            '/build_cache/.',
-            build_cache_dir
-        )
-        LOG.warning("done exporting build cache.")
+        # Build cache only has to be exported if it changed. It might take quite
+        # long, so let's skip this if not needed.
+        if has_to_rebuild_cache:
+            LOG.warning("exporting build cache...")
+            yolo.build.export_container_files(
+                build_volume_container,
+                '/build_cache/.',
+                build_cache_dir
+            )
+            LOG.warning("done exporting build cache.")
         LOG.warning("exporting lambda zip...")
         yolo.build.export_container_files(
             build_volume_container,
