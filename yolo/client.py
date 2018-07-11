@@ -1617,16 +1617,47 @@ class YoloClient(object):
         :returns:
             `dict` of param name/param value key/value pairs.
         """
-        self._get_service_cfg(service)
-        self.set_up_yolofile_context(stage=stage)
-        self._yolo_file = self.yolo_file.render(**self.context)
+        #self._get_service_cfg(service)
+        #self.set_up_yolofile_context(stage=stage)
+        #self._yolo_file = self.yolo_file.render(**self.context)
+
+        creds_provider = self.get_creds_provider(
+            self.yolo_file, stage=stage
+        )
+        self.creds_provider = creds_provider
+        account_cfg, stage_cfg = self.get_account_stage_config(
+            self.yolo_file, stage=stage
+        )
+        account_number = creds_provider.get_account_number(
+            account_cfg.account_number
+        )
+        account_outputs = self.get_account_outputs(
+            account_number,
+            account_cfg.credentials.default_region,
+        )
+        stage_outputs = self.get_stage_outputs(
+            account_number,
+            account_cfg.credentials.default_region,
+            stage,
+        )
+        context = yolo.context.runtime_context(
+            account_name=account_cfg.name,
+            account_number=account_number,
+            account_outputs=account_outputs,
+            stage_name=stage,
+            stage_region=stage_cfg.region,
+            stage_outputs=stage_outputs,
+        )
+        self.context = context
+
+        self.yolo_file = self.yolo_file.render(**self.context)
 
         params = {}
 
-        ssm_client = self.aws_credentials_provider.aws_client(
+        ssm_client = self.creds_provider.aws_client(
             self.context.account.account_number,
             'ssm',
-            self.context.stage.region,
+            region_name=self.context.stage.region,
         )
         param_path = '/{service}/{stage}/latest/'.format(
             service=service, stage=stage
