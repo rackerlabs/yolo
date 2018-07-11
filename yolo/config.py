@@ -1,5 +1,0 @@
-
-
-class CommandConfig(object):
-
-
