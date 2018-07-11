@@ -1746,6 +1746,12 @@ class YoloClient(object):
 
         service_cfg = self._get_service_cfg(service)
         # Get the default parameters first, if available.
+
+        if 'parameters' not in service_cfg['deploy']:
+            # No parameters are configured for this service.
+            print('No parameters are configured for this service.')
+            return
+
         parameters = service_cfg['deploy']['parameters']['stages'].get(
             'default', []
         )
@@ -1857,6 +1863,12 @@ class YoloClient(object):
 
         # Get the parameter names that are defined in the yolo file:
         service_cfg = self.yolo_file.services[service]
+
+        if 'parameters' not in service_cfg['deploy']:
+            # No parameters are configured for this service.
+            print('No parameters are configured for this service.')
+            return
+
         parameters_cfg = service_cfg['deploy']['parameters']['stages'].get(
             stage,
             service_cfg['deploy']['parameters']['stages']['default']
