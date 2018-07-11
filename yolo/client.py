@@ -474,15 +474,6 @@ class YoloClient(object):
         )
         return cred_vars
 
-    def _setup_aws_credentials_in_environment(self, acct_num, region):
-        os.environ['AWS_DEFAULT_REGION'] = region
-        aws_session = self.aws_credentials_provider.boto3_session(acct_num)
-        credentials = aws_session.get_credentials()
-        os.environ['AWS_ACCESS_KEY_ID'] = credentials.access_key
-        os.environ['AWS_SECRET_ACCESS_KEY'] = credentials.secret_key
-        if credentials.token:
-            os.environ['AWS_SESSION_TOKEN'] = credentials.token
-
     def _get_yolo_file(self, yolo_file):
         if yolo_file is None:
             # If no yolo file was specified, look for it in the current
@@ -1491,14 +1482,46 @@ class YoloClient(object):
         s3_svc.deploy(service, stage, version, bucket)
 
     def shell(self, stage):
-        self.set_up_yolofile_context(stage=stage)
-        self._yolo_file = self.yolo_file.render(**self.context)
-
-        # Set up AWS credentials for the shell
-        self._setup_aws_credentials_in_environment(
-            self.context.account.account_number,
-            self.context.stage.region,
+        creds_provider = self.get_creds_provider(
+            self.yolo_file, stage=stage
         )
+        self.creds_provider = creds_provider
+        account_cfg, stage_cfg = self.get_account_stage_config(
+            self.yolo_file, stage=stage
+        )
+        account_number = creds_provider.get_account_number(
+            account_cfg.account_number
+        )
+        account_outputs = self.get_account_outputs(
+            account_number,
+            account_cfg.credentials.default_region,
+        )
+        stage_outputs = self.get_stage_outputs(
+            account_number,
+            account_cfg.credentials.default_region,
+            stage,
+        )
+        context = yolo.context.runtime_context(
+            account_name=account_cfg.name,
+            account_number=account_number,
+            account_outputs=account_outputs,
+            stage_name=stage,
+            stage_region=stage_cfg.region,
+            stage_outputs=stage_outputs,
+        )
+        self.context = context
+
+        self.yolo_file = self.yolo_file.render(**self.context)
+
+        # Set up the AWS credentials in the environment:
+        creds = self.creds_provider.get_aws_account_credentials(
+            aws_account_number=self.context.account.account_number
+        )
+        os.environ['AWS_DEFAULT_REGION'] = self.context.stage.region
+        os.environ['AWS_ACCESS_KEY_ID'] = creds.aws_access_key_id
+        os.environ['AWS_SECRET_ACCESS_KEY'] = creds.aws_secret_access_key
+        if creds.aws_session_token is not None:
+            os.environ['AWS_SESSION_TOKEN'] = creds.aws_session_token
 
         # Select Python shell
         if have_bpython:
