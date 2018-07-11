@@ -1,6 +1,7 @@
 import boto3
 
 
+# NOTE(deprecated)
 class AWSCLICredentials(object):
 
     def __init__(self, profile_name):
