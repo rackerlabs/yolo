@@ -193,13 +193,6 @@ def use_profile(profile_name):
     client.YoloClient().use_profile(profile_name)
 
 
-@cli.command(name='list-accounts')
-@handle_yolo_errors
-def list_accounts():
-    """List AWS accounts."""
-    client.YoloClient().list_accounts()
-
-
 @cli.command(name='deploy-infra')
 @account_option()
 @stage_option()

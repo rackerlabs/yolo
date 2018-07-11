@@ -942,19 +942,6 @@ class YoloClient(object):
             const.NAMESPACE, 'aws_profile_name', self.aws_profile_name
         )
 
-    def list_accounts(self):
-        accounts = self.aws_credentials_provider.list_aws_accounts()
-        headers = ['Account Number', 'Name', 'Service Level']
-        aws_accounts = accounts['awsAccounts']
-        table = [headers]
-        for aws_account in aws_accounts:
-            table.append([
-                aws_account['awsAccountNumber'],
-                aws_account['name'],
-                const.ACCT_SVC_LVL_MAPPING[aws_account['serviceLevelId']],
-            ])
-        print(tabulate.tabulate(table, headers='firstrow'))
-
     def deploy_infra(self, stage=None, account=None, dry_run=False,
                      asynchronous=False, recreate=False):
         """Deploy infrastructure for an account or stage.
