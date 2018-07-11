@@ -1003,6 +1003,7 @@ class LambdaService(yolo.services.BaseService):
 
         integration = service_cfg['deploy']['apigateway']['integration']
         swagger_data = yaml.safe_load(swagger_contents)
+        integration_type = integration.get('type', const.API_GATEWAY_INTEGRATION_AWS).upper()
 
         for resource in self._get_api_resources(apig_client, rest_api_id):
             # Not all resources will have methods defined. For example,
@@ -1018,55 +1019,48 @@ class LambdaService(yolo.services.BaseService):
                         path=resource['path'],
                     )
                 )
-                # Add default integration request templates:
-                apig_client.put_integration(
-                    restApiId=rest_api_id,
-                    resourceId=resource['id'],
-                    httpMethod=method,
-                    # TODO: explain this
-                    integrationHttpMethod='POST',
-                    requestTemplates=DEFAULT_REQUEST_TEMPLATES,
-                    **integration
-                )
-                # Now add default integration response templates:
-                # loop through response codes defined for each endpoint
-                # get the config for that code, else use default
+                integration_kwargs = integration.copy()
+                integration_kwargs.update({
+                    'restApiId': rest_api_id,
+                    'resourceId': resource['id'],
+                    'httpMethod': method,
+                    'integrationHttpMethod': 'POST',
+                })
+                # Add default integration request templates, if needed:
+                if integration_type == const.API_GATEWAY_INTEGRATION_AWS:
+                    integration_kwargs['requestTemplates'] = DEFAULT_REQUEST_TEMPLATES
+                apig_client.put_integration(**integration_kwargs)
 
-                if swagger_data.get('basePath', ''):
-                    resource_path = resource['path'].split(
-                        swagger_data['basePath']
-                    )[1]
-                else:
-                    resource_path = resource['path']
-                try:
-                    relevant_resp_codes = swagger_data['paths'][resource_path].get(
-                        method.lower()
-                    ).get('responses').keys()
-                except AttributeError:
-                    continue
-                # loop through these status codes and get the default response
-                # template, then set up the integration response:
-                if relevant_resp_codes:
-                    for resp_code in relevant_resp_codes:
-                        resp_integration = DEFAULT_INTEGRATION_RESPONSES.get(
-                            str(resp_code),
-                            DEFAULT_INTEGRATION_RESPONSES['default'],
-                        )
-                        apig_client.put_integration_response(
-                            restApiId=rest_api_id,
-                            resourceId=resource['id'],
-                            httpMethod=method,
-                            **resp_integration
-                        )
-                else:
-                    # Handle proxy
-                    if method is 'ANY':
-                        apig_client.put_integration_response(
-                            restApiId=rest_api_id,
-                            resourceId=resource['id'],
-                            httpMethod='POST',
-                            **resp_integration
-                        )
+                if integration_type == const.API_GATEWAY_INTEGRATION_AWS:
+                    # Now add default integration response templates:
+                    # loop through response codes defined for each endpoint
+                    # get the config for that code, else use default
+                    if swagger_data.get('basePath', ''):
+                        resource_path = resource['path'].split(
+                            swagger_data['basePath']
+                        )[1]
+                    else:
+                        resource_path = resource['path']
+                    try:
+                        relevant_resp_codes = swagger_data['paths'][resource_path].get(
+                            method.lower()
+                        ).get('responses').keys()
+                    except AttributeError:
+                        continue
+                    # loop through these status codes and get the default response
+                    # template, then set up the integration response:
+                    if relevant_resp_codes:
+                        for resp_code in relevant_resp_codes:
+                            resp_integration = DEFAULT_INTEGRATION_RESPONSES.get(
+                                str(resp_code),
+                                DEFAULT_INTEGRATION_RESPONSES['default'],
+                            )
+                            apig_client.put_integration_response(
+                                restApiId=rest_api_id,
+                                resourceId=resource['id'],
+                                httpMethod=method,
+                                **resp_integration
+                            )
 
     def _get_api_resources(self, apig_client, rest_api_id):
         """Get all resource defintions for a given REST API."""
