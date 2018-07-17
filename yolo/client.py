@@ -122,7 +122,7 @@ class YoloClient(object):
 
         return yolo.yolo_file.YoloFile.from_path(path)
 
-    def _stage_command_common(self, stage):
+    def set_up_stage_context(self, stage):
         creds_provider = self.get_creds_provider(
             self.yolo_file, stage=stage
         )
@@ -1293,7 +1293,7 @@ class YoloClient(object):
         try:
             # TODO(larsbutler, 11-Jul-2018): Put this whole try block in a
             # separate method.
-            self._stage_command_common(stage)
+            self.set_up_stage_context(stage)
 
             lambda_svc = lambda_service.LambdaService(
                 self.yolo_file, self.creds_provider, self.context
@@ -1306,7 +1306,7 @@ class YoloClient(object):
         # TODO(larsbutler): Make the "version" a parameter, so the user
         # can explicitly specify it on the command line. Could be useful
         # for releases and the like.
-        self._stage_command_common(stage)
+        self.set_up_stage_context(stage)
 
         service_client = self._get_service_client(service)
 
@@ -1318,7 +1318,7 @@ class YoloClient(object):
         service_client.push(service, stage, bucket)
 
     def list_builds(self, service, stage):
-        self._stage_command_common(stage)
+        self.set_up_stage_context(stage)
 
         service_client = self._get_service_client(service)
 
@@ -1341,7 +1341,7 @@ class YoloClient(object):
                 ' but not both.'
             )
 
-        self._stage_command_common(stage)
+        self.set_up_stage_context(stage)
 
         # TODO(larsbutler): Check if service is actually
         # lambda/lambda-apigateway. If it isn't, throw an error.
@@ -1363,7 +1363,7 @@ class YoloClient(object):
             lambda_svc.deploy(service, stage, version, bucket)
 
     def deploy_s3(self, stage, service, version):
-        self._stage_command_common(stage)
+        self.set_up_stage_context(stage)
 
         # Builds bucket:
         bucket = self._ensure_bucket(
@@ -1378,7 +1378,7 @@ class YoloClient(object):
         s3_svc.deploy(service, stage, version, bucket)
 
     def shell(self, stage):
-        self._stage_command_common(stage)
+        self.set_up_stage_context(stage)
 
         # Set up the AWS credentials in the environment:
         creds = self.creds_provider.get_aws_account_credentials(
@@ -1456,7 +1456,7 @@ class YoloClient(object):
         :returns:
             `dict` of param name/param value key/value pairs.
         """
-        self._stage_command_common(stage)
+        self.set_up_stage_context(stage)
 
         params = {}
 
@@ -1498,7 +1498,7 @@ class YoloClient(object):
         if param is None:
             param = tuple()
 
-        self._stage_command_common(stage)
+        self.set_up_stage_context(stage)
 
         service_cfg = self._get_service_cfg(service)
         # Get the default parameters first, if available.
@@ -1649,7 +1649,7 @@ class YoloClient(object):
             print('All required parameters are stored in SSM')
 
     def show_service(self, service, stage):
-        self._stage_command_common(stage)
+        self.set_up_stage_context(stage)
         lambda_svc = lambda_service.LambdaService(
             self.yolo_file, self.creds_provider, self.context
         )
