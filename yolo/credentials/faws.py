@@ -1,6 +1,7 @@
 import boto3
 import requests
 
+from yolo import const
 import yolo.credentials
 import yolo.exceptions
 
@@ -29,7 +30,7 @@ class FAWSCredentialsProvider(yolo.credentials.AWSCredentials):
             }
         }
         response = requests.post(
-            self.RAX_IDENTITY_ENDPOINT + '/v2.0/tokens'
+            self.RAX_IDENTITY_ENDPOINT + '/v2.0/tokens',
             json=auth_params,
             headers={'Content-Type': 'application/json'},
         )
@@ -84,9 +85,9 @@ class FAWSCredentialsProvider(yolo.credentials.AWSCredentials):
         response.raise_for_status()
         creds = response.json()['credential']
         return yolo.credentials.AWSCredentials(
-            aws_access_key_id=cred['accessKeyId'],
-            aws_secret_access_key=cred['secretAccessKey'],
-            aws_session_token=cred['sessionToken'],
+            aws_access_key_id=creds['accessKeyId'],
+            aws_secret_access_key=creds['secretAccessKey'],
+            aws_session_token=creds['sessionToken'],
         )
 
     def boto3_session(self, account_cfg):
