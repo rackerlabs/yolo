@@ -15,7 +15,6 @@
 from collections import namedtuple
 import sys
 
-from dotted_dict import DottedDict
 import jinja2
 from ruamel import yaml
 import voluptuous as volup
@@ -254,27 +253,28 @@ class YoloFile(object):
         :raises:
             TODO: a useful error with better formatting than voluptuous offers
         """
-        return DottedDict(self.__class__.YOLOFILE_SCHEMA(self._raw_content))
+        # return DottedDict(self.__class__.YOLOFILE_SCHEMA(self._raw_content))
+        return self.__class__.YOLOFILE_SCHEMA(self._raw_content)
 
     @property
     def name(self):
-        return self.content.name
+        return self.content['name']
 
     @property
     def accounts(self):
-        return self.content.accounts
+        return self.content['accounts']
 
     @property
     def stages(self):
-        return self.content.stages
+        return self.content['stages']
 
     @property
     def templates(self):
-        return self.content.templates
+        return self.content['templates']
 
     @property
     def services(self):
-        return self.content.services
+        return self.content['services']
 
     def get_stage_config(self, stage):
         if stage in self.stages:

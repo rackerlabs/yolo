@@ -5,7 +5,7 @@ templates:
   account:
     path: 'account-templates'
 services:
-  MyLambdaService:
+  my-lambda-service:
     type: 'lambda'
     build:
       working_dir: '.'

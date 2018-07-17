@@ -168,7 +168,7 @@ class YoloClient(object):
     def get_account_config(self, yolo_file, account):
         acct_map = {}
         for acct in yolo_file.accounts:
-            acct_map[acct.name] = acct
+            acct_map[acct['name']] = acct
         return acct_map.get(
             # Get a specific account, if one is defined in the yolo config:
             account,
@@ -187,7 +187,9 @@ class YoloClient(object):
     def get_account_stage_config(self, yolo_file, account=None, stage=None):
         if stage is not None:
             stage_cfg = self.get_stage_config(yolo_file, stage)
-            account_cfg = self.get_account_config(yolo_file, stage_cfg.account)
+            account_cfg = self.get_account_config(
+                yolo_file, stage_cfg['account']
+            )
         else:
             stage_cfg = None
             # No matter what, there's always an associated account.
@@ -198,11 +200,11 @@ class YoloClient(object):
         account_cfg, stage_cfg = self.get_account_stage_config(
             yolo_file, account=account, stage=stage
         )
-        if account_cfg.credentials.provider == 'aws':
+        if account_cfg['credentials']['provider'] == 'aws':
             return yolo.credentials.aws.AWSCredentialsProvider(
-                profile_name=account_cfg.credentials.profile
+                profile_name=account_cfg['credentials']['profile']
             )
-        elif account_cfg.credentials.provider == 'faws':
+        elif account_cfg['credentials']['provider'] == 'faws':
             return yolo.credentials.faws.FAWSCredentialsProvider(
                 rs_username=os.getenv(const.RACKSPACE_USERNAME),
                 rs_api_key=os.getenv(const.RACKSPACE_API_KEY),
@@ -988,9 +990,9 @@ class YoloClient(object):
             # Only with the stage may we load account stack outputs:
             account_outputs = self.get_account_outputs(
                 account_cfg,
-                account_cfg.credentials.default_region,
+                account_cfg['credentials']['default_region'],
             )
-            stage_region = stage_cfg.region if stage_cfg is not None else None
+            stage_region = stage_cfg['region'] if stage_cfg is not None else None
         else:
             account_outputs = {}
             stage_region = None
@@ -998,7 +1000,7 @@ class YoloClient(object):
             account_name=account,
             account_number=account_number,
             account_outputs=account_outputs,
-            account_region=account_cfg.credentials.default_region,
+            account_region=account_cfg['credentials']['default_region'],
             stage_name=stage,
             stage_region=stage_region,
             # We don't populate stage outputs here, because those come from the
@@ -1332,11 +1334,11 @@ class YoloClient(object):
             account_number = creds_provider.get_aws_account_number(account_cfg)
             account_outputs = self.get_account_outputs(
                 account_cfg,
-                account_cfg.credentials.default_region,
+                account_cfg['credentials']['default_region'],
             )
             stage_outputs = self.get_stage_outputs(
                 account_cfg,
-                account_cfg.credentials.default_region,
+                account_cfg['credentials']['default_region'],
                 stage,
             )
             self.context = yolo.context.runtime_context(

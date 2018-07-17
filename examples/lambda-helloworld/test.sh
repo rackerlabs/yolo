@@ -3,7 +3,7 @@
 set -ex
 
 STG=dev
-SVC=MyLambdaService
+SVC=my-lambda-service
 
 yolo deploy-infra --stage ${STG}
 yolo build-lambda --stage ${STG} --service ${SVC}
