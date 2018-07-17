@@ -94,49 +94,6 @@ class FakeYokeArgs(object):
 
 class YoloClient(object):
 
-#    def __init__(self, yolo_file=None):
-#        self._yolo_file_path = yolo_file
-#        self._yolo_file = None
-#        self._faws_client = None
-#
-#        # Credentials for accessing FAWS accounts:
-#        self._rax_username = None
-#        self._rax_api_key = None
-#
-#        # AWS CLI named profile
-#        self._aws_profile_name = None
-#
-#        self._version_hash = None
-#
-#        # This will get populated when the ``yolo_file`` is read and the basic
-#        # account/stage information (including stack outputs) is read.
-#        self._context = None
-#
-#        self.some_command()
-#
-#    def some_command(self, stage='lars', account='default'):
-#        pass
-#        # read unrendered yolo_file
-#        yf = self.yolo_file
-#        # figure out which credential provider to load
-#        # select the account from the `stage` or the `account`
-#        #   you can't specify both; only one or the other
-#        if stage is not None:
-#            # Stage case
-#
-#            # If the stage isn't defined explicitly, use the default stage
-#            # config:
-#            stage_cfg = yf.stages.get(stage, yf.stages.get('default'))
-#            import pdb; pdb.set_trace()
-#            acct_cfg = yf.accounts.get(stage_cfg['account'])
-#            import pdb; pdb.set_trace()
-#        elif account is not None:
-#            pass
-#            # TODO: load acct_cfg another way
-#
-#        # Based on acct_cfg['provider'], load the appropriate credential
-#        # provider.
-
     def __init__(self, yolo_file=None):
         self.yolo_file_path = yolo_file
         self.yolo_file = self._get_yolo_file(self.yolo_file_path)
@@ -350,22 +307,6 @@ class YoloClient(object):
             # TODO: add timeout
         )
         return service_client
-
-#    def get_stage_outputs(self, account_number, region, stage):
-#        cf_client = self.creds_provider.aws_client(
-#            account_number, 'cloudformation', region_name=region,
-#        )
-#        cf = CloudFormation(cf_client)
-#        stack_name = self.get_stage_stack_name(account_number, stage)
-#        try:
-#            return cf.get_stack_outputs(stack_name=stack_name)
-#        except StackDoesNotExist:
-#            LOG.warning(
-#                'Stage infrastructure stack does not exist. You may need to '
-#                'run "yolo deploy-infra --stage %s".',
-#                stage,
-#            )
-#        return {}
 
     def get_stage_outputs(self, account_cfg, region, stage):
         cf_client = self.creds_provider.aws_client(
@@ -1278,9 +1219,6 @@ class YoloClient(object):
         self.context = context
         self.yolo_file = self.yolo_file.render(**context)
 
-        # self.set_up_yolofile_context()
-        # self._yolo_file = self.yolo_file.render(**self.context)
-
         # else, show status for all stages
         headers = ['StackName', 'Description', 'StackStatus']
         table = [headers]
@@ -1368,7 +1306,6 @@ class YoloClient(object):
         # TODO(larsbutler): Make the "version" a parameter, so the user
         # can explicitly specify it on the command line. Could be useful
         # for releases and the like.
-        ########
         self._stage_command_common(stage)
 
         service_client = self._get_service_client(service)
@@ -1519,10 +1456,6 @@ class YoloClient(object):
         :returns:
             `dict` of param name/param value key/value pairs.
         """
-        #self._get_service_cfg(service)
-        #self.set_up_yolofile_context(stage=stage)
-        #self._yolo_file = self.yolo_file.render(**self.context)
-
         self._stage_command_common(stage)
 
         params = {}
@@ -1732,8 +1665,6 @@ class YoloClient(object):
             raise YoloError('You must specify either --stage or --account (but'
                             ' not both).')
 
-        ########
-
         creds_provider = self.get_creds_provider(
             self.yolo_file, account=account, stage=stage
         )
@@ -1761,7 +1692,6 @@ class YoloClient(object):
         )
         self.context = context
 
-        # TODO: do we need this here?
         self.yolo_file = self.yolo_file.render(**context)
 
         if with_stage:
