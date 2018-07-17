@@ -2,8 +2,8 @@ import os
 
 import boto3
 
-from yolo import credentials as creds
-from yolo import exceptions
+import yolo.credentials
+import yolo.exceptions
 
 
 class AWSCredentialsProvider(object):
@@ -17,6 +17,8 @@ class AWSCredentialsProvider(object):
         :param str aws_account_number:
             Optional for this provider, since the account number is implicit
             with whatever credentials we can find.
+        :returns:
+            :class:`yolo.credentials.AWSCredentials` object.
         """
         # TODO: check if the given aws_account_number (IFF one is given)
         # actually matches the account to which the found credentials belong.
@@ -46,7 +48,7 @@ class AWSCredentialsProvider(object):
             if profile_creds is None:
                 # If this is None, no matching profile for `self._profile_name`
                 # was found in `~/.aws/credentials`, essentially.
-                raise exceptions.CredentialsError(
+                raise yolo.exceptions.CredentialsError(
                     'Unable to fetch AWS credentials: nothing found in the '
                     'environment or the AWS CLI profile "{profile}"'.format(
                         profile=self._profile_name
@@ -58,18 +60,19 @@ class AWSCredentialsProvider(object):
 
         # If no default profile exists even, raise an error.
         # TODO: test me
-        return creds.AWSCredentials(
+        return yolo.credentials.AWSCredentials(
             aws_access_key_id=key_id,
             aws_secret_access_key=secret_key,
             aws_session_token=session_token,
         )
 
-    def boto3_session(self, aws_account):
+    def boto3_session(self, account_cfg):
         """
-        :param str aws_account:
-            AWS account number. Not used by this provider.
+        :param dict account_cfg:
+            Target account config read from the yolo config file.
         """
-        creds = self.get_aws_account_credentials(aws_account)
+        # account_number = self.get_account_number(account_cfg)
+        creds = self.get_aws_account_credentials()
         if self._session is None:
             self._session = boto3.session.Session(
                 aws_access_key_id=creds.aws_access_key_id,
@@ -79,34 +82,33 @@ class AWSCredentialsProvider(object):
             )
         return self._session
 
-    def get_account_number(self, aws_account):
-        """Figure out the concrete AWS account number from an account alias.
+    def get_aws_account_number(self, account_cfg):
+        """Get the actual AWS account number for a given account configuration.
 
-        :param str aws_account:
-            Alias/label for an account as defined the yolo config file, or
-            `None`.
+        :param dict account_cfg:
+            Target account config read from the yolo config file.
 
         :returns:
-            AWS account number, as a string.
+            AWS account number as a string.
         """
         return self.aws_client(
-            aws_account, 'sts'
+            account_cfg, 'sts'
         ).get_caller_identity().get('Account')
 
-    def aws_client(self, aws_account, service, region_name=None, **kwargs):
+    def aws_client(self, account_cfg, service, region_name=None, **kwargs):
         """
-        :param str aws_account:
-            AWS account number. Not used by this provider.
+        :param dict account_cfg:
+            Target account config read from the yolo config file.
         """
-        return self.boto3_session(aws_account).client(
+        return self.boto3_session(account_cfg).client(
             service, region_name=region_name, **kwargs
         )
 
-    def aws_resource(self, aws_account, resource, region_name=None, **kwargs):
+    def aws_resource(self, account_cfg, resource, region_name=None, **kwargs):
         """
-        :param str aws_account:
-            AWS account number. Not used by this provider.
+        :param dict account_cfg:
+            Target account config read from the yolo config file.
         """
-        return self.boto3_session(aws_account).resource(
+        return self.boto3_session(account_cfg).resource(
             resource, region_name=region_name, **kwargs
         )

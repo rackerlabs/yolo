@@ -42,6 +42,7 @@ import tabulate
 import yolo.const
 import yolo.context
 import yolo.credentials.aws
+import yolo.credentials.faws
 import yolo.exceptions
 import yolo.yolo_file
 
@@ -202,10 +203,10 @@ class YoloClient(object):
                 profile_name=account_cfg.credentials.profile
             )
         elif account_cfg.credentials.provider == 'faws':
-            raise Exception('not implemented')
-            # return yolo.credentials.faws.FAWSCredentialsProvider(
-            #     ???
-            #)
+            return yolo.credentials.faws.FAWSCredentialsProvider(
+                rs_username=os.getenv(const.RACKSPACE_USERNAME),
+                rs_api_key=os.getenv(const.RACKSPACE_API_KEY),
+            )
         else:
             raise yolo.exception.YoloError(
                 'Unknown credentials provider "{}"'.format(
@@ -316,11 +317,30 @@ class YoloClient(object):
         )
         return service_client
 
-    def get_stage_outputs(self, account_number, region, stage):
+#    def get_stage_outputs(self, account_number, region, stage):
+#        cf_client = self.creds_provider.aws_client(
+#            account_number, 'cloudformation', region_name=region,
+#        )
+#        cf = CloudFormation(cf_client)
+#        stack_name = self.get_stage_stack_name(account_number, stage)
+#        try:
+#            return cf.get_stack_outputs(stack_name=stack_name)
+#        except StackDoesNotExist:
+#            LOG.warning(
+#                'Stage infrastructure stack does not exist. You may need to '
+#                'run "yolo deploy-infra --stage %s".',
+#                stage,
+#            )
+#        return {}
+
+    def get_stage_outputs(self, account_cfg, region, stage):
         cf_client = self.creds_provider.aws_client(
-            account_number, 'cloudformation', region_name=region,
+            account_cfg, 'cloudformation', region_name=region,
         )
         cf = CloudFormation(cf_client)
+        account_number = self.creds_provider.get_aws_account_number(
+            account_cfg
+        )
         stack_name = self.get_stage_stack_name(account_number, stage)
         try:
             return cf.get_stack_outputs(stack_name=stack_name)
@@ -332,11 +352,12 @@ class YoloClient(object):
             )
         return {}
 
-
-    def get_account_outputs(self, account_number, region):
+    # TODO: use account config instead of account number
+    def get_account_outputs(self, account_cfg, region):
         cf_client = self.creds_provider.aws_client(
-            account_number, 'cloudformation', region_name=region,
+            account_cfg, 'cloudformation', region_name=region,
         )
+        account_number = self.creds_provider.get_aws_account_number(account_cfg)
         cf = CloudFormation(cf_client)
         stack_name = self.get_account_stack_name(account_number)
         # Full account-level data might not be available, when the baseline
@@ -386,7 +407,7 @@ class YoloClient(object):
             if 'account' in self.yolo_file.templates:
                 # get account stack outputs
                 account_stack_outputs = self.get_account_outputs(
-                    account_cfg.account_number,
+                    account_cfg,
                     account_cfg.default_region,
                 )
             else:
@@ -421,7 +442,7 @@ class YoloClient(object):
 
                 # get account stack outputs
                 account_stack_outputs = self.get_account_outputs(
-                    account_cfg.account_number,
+                    account_cfg,
                     account_cfg.default_region,
                 )
                 account_context = utils.DottedDict(
@@ -491,13 +512,13 @@ class YoloClient(object):
             ])
         return stgs_accts_regions
 
-    def _ensure_bucket(self, acct_num, region, bucket_name):
+    def _ensure_bucket(self, account_cfg, region, bucket_name):
         """Make sure an S3 bucket exists in the specified account/region.
 
         If it doesn't exist, create it.
 
-        :param str acct_num:
-            AWS account number.
+        :param dict account_cfg:
+            Target account config read from the yolo config file.
         :param str region:
             AWS region in which to create the bucket (e.g., us-east-1,
             eu-west-1, etc.).
@@ -507,7 +528,9 @@ class YoloClient(object):
         :returns:
             :class:`boto3.resources.factory.s3.Bucket` instance.
         """
-        s3_client = self.creds_provider.aws_client(acct_num, 's3', region_name=region)
+        s3_client = self.creds_provider.aws_client(
+            account_cfg, 's3', region_name=region
+        )
         try:
             print('checking for bucket {}...'.format(bucket_name))
             s3_client.head_bucket(Bucket=bucket_name)
@@ -528,7 +551,9 @@ class YoloClient(object):
                         'LocationConstraint': region
                     }
                 s3_client.create_bucket(**create_bucket_kwargs)
-        s3 = self.creds_provider.aws_resource(acct_num, 's3', region_name=region)
+        s3 = self.creds_provider.aws_resource(
+            account_cfg, 's3', region_name=region
+        )
         bucket = s3.Bucket(bucket_name)
         return bucket
 
@@ -956,13 +981,13 @@ class YoloClient(object):
         account_cfg, stage_cfg = self.get_account_stage_config(
             self.yolo_file, stage=stage, account=account
         )
-        account_number = creds_provider.get_account_number(account)
+        account_number = creds_provider.get_aws_account_number(account_cfg)
         account_outputs = {}
 
         if stage is not None:
             # Only with the stage may we load account stack outputs:
             account_outputs = self.get_account_outputs(
-                account_number,
+                account_cfg,
                 account_cfg.credentials.default_region,
             )
             stage_region = stage_cfg.region if stage_cfg is not None else None
@@ -1133,7 +1158,7 @@ class YoloClient(object):
             tags.append(const.YOLO_STACK_TAGS['protected'])
 
         bucket = self._ensure_bucket(
-            self.context.account.account_number,
+            self.context.account,
             region,
             self.app_bucket_name,
         )
@@ -1177,7 +1202,7 @@ class YoloClient(object):
             )
 
         cf_client = self.creds_provider.aws_client(
-            self.context.account.account_number,
+            self.context.account,
             'cloudformation',
             region_name=region,
         )
@@ -1210,12 +1235,13 @@ class YoloClient(object):
         context = yolo.context.runtime_context(
             # TODO: what about a default account name? 'default'?
             account_name=None,
-            account_number=creds_provider.get_account_number(None),
+            account_number=creds_provider.get_aws_account_number(None),
             account_outputs=None,
             stage_name=stage,
             stage_region=None,
             stage_outputs=None,
         )
+        self.context = context
         self.yolo_file = self.yolo_file.render(**context)
 
         # self.set_up_yolofile_context()
@@ -1231,7 +1257,7 @@ class YoloClient(object):
 
         for stg_name, account, region in stgs_accts_regions:
             cf_client = creds_provider.aws_client(
-                account, 'cloudformation', region_name=region
+                self.context.account, 'cloudformation', region_name=region
             )
             if stg_name == YoloFile.DEFAULT_STAGE:
                 stacks_paginator = cf_client.get_paginator('list_stacks')
@@ -1253,7 +1279,7 @@ class YoloClient(object):
                 # stack.
                 stack_name = '{}-{}-{}'.format(
                     self.yolo_file.app_name,
-                    creds_provider.get_account_number(account),
+                    creds_provider.get_aws_account_number(account),
                     stg_name,
                 )
                 try:
@@ -1303,15 +1329,13 @@ class YoloClient(object):
             account_cfg, stage_cfg = self.get_account_stage_config(
                 self.yolo_file, stage=stage
             )
-            account_number = creds_provider.get_account_number(
-                account_cfg.account_number
-            )
+            account_number = creds_provider.get_aws_account_number(account_cfg)
             account_outputs = self.get_account_outputs(
-                account_number,
+                account_cfg,
                 account_cfg.credentials.default_region,
             )
             stage_outputs = self.get_stage_outputs(
-                account_number,
+                account_cfg,
                 account_cfg.credentials.default_region,
                 stage,
             )
@@ -1329,6 +1353,7 @@ class YoloClient(object):
             lambda_svc = lambda_service.LambdaService(
                 self.yolo_file, self.creds_provider, self.context
             )
+            import pdb; pdb.set_trace()
             lambda_svc.build(service, stage, build_log)
         finally:
             build_log.close()
@@ -1345,15 +1370,15 @@ class YoloClient(object):
         account_cfg, stage_cfg = self.get_account_stage_config(
             self.yolo_file, stage=stage
         )
-        account_number = creds_provider.get_account_number(
+        account_number = creds_provider.get_aws_account_number(
             account_cfg.account_number
         )
         account_outputs = self.get_account_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
         )
         stage_outputs = self.get_stage_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
             stage,
         )
@@ -1373,7 +1398,7 @@ class YoloClient(object):
         service_client = self._get_service_client(service)
 
         bucket = self._ensure_bucket(
-            self.context.account.account_number,
+            self.context.account,
             self.context.stage.region,
             self.app_bucket_name,
         )
@@ -1388,15 +1413,15 @@ class YoloClient(object):
         account_cfg, stage_cfg = self.get_account_stage_config(
             self.yolo_file, stage=stage
         )
-        account_number = creds_provider.get_account_number(
+        account_number = creds_provider.get_aws_account_number(
             account_cfg.account_number
         )
         account_outputs = self.get_account_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
         )
         stage_outputs = self.get_stage_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
             stage,
         )
@@ -1416,7 +1441,7 @@ class YoloClient(object):
         service_client = self._get_service_client(service)
 
         bucket = self._ensure_bucket(
-            self.context.account.account_number,
+            self.context.account,
             self.context.stage.region,
             self.app_bucket_name
         )
@@ -1441,15 +1466,15 @@ class YoloClient(object):
         account_cfg, stage_cfg = self.get_account_stage_config(
             self.yolo_file, stage=stage
         )
-        account_number = creds_provider.get_account_number(
+        account_number = creds_provider.get_aws_account_number(
             account_cfg.account_number
         )
         account_outputs = self.get_account_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
         )
         stage_outputs = self.get_stage_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
             stage,
         )
@@ -1469,7 +1494,7 @@ class YoloClient(object):
         # lambda/lambda-apigateway. If it isn't, throw an error.
 
         bucket = self._ensure_bucket(
-            self.context.account.account_number,
+            self.context.account,
             self.context.stage.region,
             self.app_bucket_name,
         )
@@ -1492,15 +1517,15 @@ class YoloClient(object):
         account_cfg, stage_cfg = self.get_account_stage_config(
             self.yolo_file, stage=stage
         )
-        account_number = creds_provider.get_account_number(
+        account_number = creds_provider.get_aws_account_number(
             account_cfg.account_number
         )
         account_outputs = self.get_account_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
         )
         stage_outputs = self.get_stage_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
             stage,
         )
@@ -1518,7 +1543,7 @@ class YoloClient(object):
 
         # Builds bucket:
         bucket = self._ensure_bucket(
-            self.context.account.account_number,
+            self.context.account,
             self.context.stage.region,
             self.app_bucket_name,
         )
@@ -1536,15 +1561,15 @@ class YoloClient(object):
         account_cfg, stage_cfg = self.get_account_stage_config(
             self.yolo_file, stage=stage
         )
-        account_number = creds_provider.get_account_number(
+        account_number = creds_provider.get_aws_account_number(
             account_cfg.account_number
         )
         account_outputs = self.get_account_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
         )
         stage_outputs = self.get_stage_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
             stage,
         )
@@ -1647,15 +1672,15 @@ class YoloClient(object):
         account_cfg, stage_cfg = self.get_account_stage_config(
             self.yolo_file, stage=stage
         )
-        account_number = creds_provider.get_account_number(
+        account_number = creds_provider.get_aws_account_number(
             account_cfg.account_number
         )
         account_outputs = self.get_account_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
         )
         stage_outputs = self.get_stage_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
             stage,
         )
@@ -1674,7 +1699,7 @@ class YoloClient(object):
         params = {}
 
         ssm_client = self.creds_provider.aws_client(
-            self.context.account.account_number,
+            self.context.account,
             'ssm',
             region_name=self.context.stage.region,
         )
@@ -1719,15 +1744,15 @@ class YoloClient(object):
         account_cfg, stage_cfg = self.get_account_stage_config(
             self.yolo_file, stage=stage
         )
-        account_number = creds_provider.get_account_number(
+        account_number = creds_provider.get_aws_account_number(
             account_cfg.account_number
         )
         account_outputs = self.get_account_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
         )
         stage_outputs = self.get_stage_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
             stage,
         )
@@ -1789,7 +1814,7 @@ class YoloClient(object):
 
         # get ssm client
         ssm_client = self.creds_provider.aws_client(
-            self.context.account.account_number,
+            self.context.account,
             'ssm',
             region_name=self.context.stage.region,
         )
@@ -1900,15 +1925,15 @@ class YoloClient(object):
         account_cfg, stage_cfg = self.get_account_stage_config(
             self.yolo_file, stage=stage
         )
-        account_number = creds_provider.get_account_number(
+        account_number = creds_provider.get_aws_account_number(
             account_cfg.account_number
         )
         account_outputs = self.get_account_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
         )
         stage_outputs = self.get_stage_outputs(
-            account_number,
+            account_cfg,
             account_cfg.credentials.default_region,
             stage,
         )
@@ -1948,7 +1973,7 @@ class YoloClient(object):
         account_cfg, stage_cfg = self.get_account_stage_config(
             self.yolo_file, stage=stage, account=account
         )
-        account_number = creds_provider.get_account_number(account)
+        account_number = creds_provider.get_aws_account_number(account)
 
         if stage is not None:
             stage_region = stage_cfg.region if stage_cfg is not None else None
@@ -1977,7 +2002,7 @@ class YoloClient(object):
             region = account_cfg.credentials.default_region
 
         cf_client = self.creds_provider.aws_client(
-            account_number, 'cloudformation', region_name=region,
+            account_cfg, 'cloudformation', region_name=region,
         )
         cf = CloudFormation(cf_client)
 
@@ -1991,7 +2016,7 @@ class YoloClient(object):
                 )
 
             outputs = self.get_stage_outputs(
-                self.context.account.account_number,
+                self.context.account,
                 self.context.stage.region,
                 stage,
             )
@@ -2005,7 +2030,7 @@ class YoloClient(object):
                 )
 
             outputs = self.get_account_outputs(
-                self.context.account.account_number,
+                account_cfg,
                 self.context.account.default_region,
             )
 
