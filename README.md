@@ -1,4 +1,4 @@
-# yolo 
+# yolo
 
 Manage infrastructure and services on AWS for multiple accounts/stages.
 
