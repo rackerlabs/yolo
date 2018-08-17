@@ -1,5 +1,17 @@
 # Changes
 
+## 0.3.2 (17-Aug-2018)
+
+- API Gateway: Support AWS proxy integration
+- API Gateway: Allow Cognito authorizers to pass along providerARNs
+- Build: Include python build Dockerfile in package data
+- Build: Use docker volume mounts (instead of bind mounts) in build containers
+- Commands: Add explicit `yolo build-lambda --build-log` option
+- Commands: Add `yolo ensure-parameters` command
+- Configuration: Allow `templates` section of yolo.yml to be empty
+- Docs: Add PyPI publishing notes to README.md
+- Numerous bug fixes
+
 ## 0.3.1 (3-Nov-2017)
 
 - Pin `botocore` dependency to a min version of 1.7.18. This is required for

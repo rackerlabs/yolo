@@ -1,4 +1,4 @@
-# yolo 
+# yolo
 
 Manage infrastructure and services on AWS for multiple accounts/stages.
 
@@ -97,10 +97,30 @@ Commands:
 NOTE(larsbutler): This is more for my benefit than anyone else's, since I can
 never remember the exact incantations to publish to PyPI for some reason. :)
 
-Testing a release:
+Preparing a release:
 
-    $ python setup.py sdist upload --repository https://test.pypi.org/legacy/
+- Choose a new version number
+- Update `yolo.__version__` in `yolo/__init__.py`
+- Update the CHANGELOG.md with any relevant changes, adding a new section for
+  the new version number
+- Submit a pull request with those boilerplate changes
+- Merge it to `master`
+
+Build the release:
+
+    $ python3 -m pip install --upgrade setuptools wheel twine
+    $ python3 setup.py sdist bdist_wheel
+
+Test the release:
+
+    $ twine upload --repository-url https://test.pypi.org/legacy/ dist/*
+    $ python3 -m pip install --index-url https://test.pypi.org/simple/ yolo
 
 Make the actual release:
 
-    $ python setup.py sdist upload --repository https://upload.pypi.org/legacy/
+    $ twine upload dist/*
+
+Tag the release:
+
+    $ git tag VERSION $(git rev-parse HEAD)  # where 'VERSION' is the new version number
+    $ git push REMOTE --tags  # where REMOTE is origin, upstream, etc.
