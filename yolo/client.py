@@ -559,26 +559,26 @@ class YoloClient(object):
             StackName=stack_name
         )['Stacks']
 
-        output = utils.StringIO()
-
         # Show the changes:
-        output.write('Resource Changes:\n')
-        json.dump(
-            change_set_desc['Changes'], output, indent=2, sort_keys=True
+        print('Resource Changes:')
+        print(
+            json.dumps(
+                change_set_desc['Changes'], indent=2, sort_keys=True
+            )
         )
 
         # Show a diff of the parameters:
-        output.write('\n\nParameter Changes:\n')
+        print('\nParameter Changes:')
         param_diff = self._get_param_diff(stack_desc, change_set_desc)
-        output.write(param_diff)
+        print(param_diff)
 
         # Show a diff of the tags:
-        output.write('\n\nTags Changes:\n')
+        print('\nTags Changes:')
         tag_diff = self._get_tag_diff(stack_desc, change_set_desc)
-        output.write(tag_diff)
+        print(tag_diff)
 
         # Show a diff of the full template:
-        output.write('\n\nTemplate Changes:\n')
+        print('\nTemplate Changes:')
         template_diff = self._get_template_diff(
             cf_client,
             dict(StackName=stack_name),
@@ -586,10 +586,7 @@ class YoloClient(object):
             fromfile=stack_name,
             tofile='{}-dry-run'.format(stack_name),
         )
-        output.write(template_diff)
-
-        output.seek(0)
-        print(output.read())
+        print(template_diff)
 
         # Clean up after ourselves; we don't want to leave a bunch of stale
         # changes sets lying around.
