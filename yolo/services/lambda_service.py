@@ -1123,7 +1123,7 @@ class LambdaService(yolo.services.BaseService):
                 apigateway_config['rest_api_name']
             )
             # Add base path mapping
-            domains = apigateway_config['domains']
+            domains = apigateway_config.get('domains', [])
             # NOTE(larsbutler): There can indeed be multiple domain/base path
             # mapping configs for a single app.
             for domain in domains:
