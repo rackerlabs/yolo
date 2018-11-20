@@ -60,7 +60,7 @@ if PY27:
     input = raw_input  # noqa
 
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.INFO,
     format=('%(asctime)s [%(levelname)s] '
             '[%(name)s.%(funcName)s:%(lineno)d]: %(message)s'),
     datefmt='%Y-%m-%d %H:%M:%S'
