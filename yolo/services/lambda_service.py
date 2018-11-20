@@ -65,7 +65,7 @@ class LambdaService(yolo.services.BaseService):
         :param build_log:
             File-like object to write build output to.
         """
-        print('Building {service} for stage "{stage}"'.format(
+        LOG.info('Building {service} for stage "{stage}"'.format(
             service=service, stage=stage
         ))
         service_cfg = self.yolo_file.services[service]
