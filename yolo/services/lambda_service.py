@@ -166,6 +166,9 @@ class LambdaService(yolo.services.BaseService):
             container.short_id,
         )
         exit_code = yolo.build.wait_for_container_to_finish(container)
+        log_contents = container.logs(stdout=True, stderr=True)
+        build_log.write(log_contents.decode('utf-8'))
+        LOG.warning('Build log written to "%s"', build_log.name)
         # Build cache only has to be exported if it changed. It might take quite
         # long, so let's skip this if not needed.
         if has_to_rebuild_cache:
@@ -183,9 +186,6 @@ class LambdaService(yolo.services.BaseService):
             dist_dir
         )
         LOG.warning("done exporting lambda zip.")
-        log_contents = container.logs(stdout=True, stderr=True)
-        build_log.write(log_contents.decode('utf-8'))
-        LOG.warning('Build log written to "%s"', build_log.name)
         yolo.build.remove_container(container)
         # remove the container and its volumes
         yolo.build.remove_container(build_volume_container, v=True)
