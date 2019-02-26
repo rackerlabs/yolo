@@ -34,7 +34,7 @@ AWSAccount = namedtuple(
 )
 DEFAULT_REGION = 'us-east-1'
 AWS_PROVIDER = 'aws'
-FAWS_PROVIDER= 'faws'
+FAWS_PROVIDER = 'faws'
 CRED_PROVIDERS = [AWS_PROVIDER, FAWS_PROVIDER]
 
 

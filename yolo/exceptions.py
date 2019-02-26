@@ -28,6 +28,7 @@ class StackDoesNotExist(Exception):
 class ResourceNotFound(Exception):
     pass
 
+
 class CredentialsError(YoloError):
     """Errors related to the fetching or handling of credentials."""
 

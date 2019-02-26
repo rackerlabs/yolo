@@ -52,7 +52,6 @@ import yolo.exceptions
 from yolo.exceptions import NoInfrastructureError
 from yolo.exceptions import StackDoesNotExist
 from yolo.exceptions import YoloError
-from yolo import faws_client
 from yolo.services import lambda_service
 from yolo.services import s3_service
 from yolo.utils import get_version_hash
@@ -436,29 +435,6 @@ class YoloClient(object):
             account_number,
             stage,
         )
-
-    def _get_yolo_file(self, yolo_file):
-        if yolo_file is None:
-            # If no yolo file was specified, look for it in the current
-            # directory.
-            config_path = None
-            for filename in const.DEFAULT_FILENAMES:
-                full_path = os.path.abspath(
-                    os.path.join(os.getcwd(), filename)
-                )
-                if os.path.isfile(full_path):
-                    config_path = full_path
-                    break
-            else:
-                raise Exception(
-                    'Yolo file could not be found, please specify one '
-                    'explicitly with --yolo-file or -f')
-        else:
-            config_path = os.path.abspath(yolo_file)
-
-        self._yolo_file_path = config_path
-        yf = YoloFile.from_path(self._yolo_file_path)
-        return yf
 
     def _stages_accounts_regions(self, yf, stage):
         # If stage specific, show only status for that stage
