@@ -1,0 +1,31 @@
+name: s3-helloworld
+templates:
+  stage:
+    path: '.'
+    params:
+      BucketName: 's3-test-bucket-{{ account.account_number }}'
+#stages:
+#  default:
+#    region: 'us-east-1'
+
+#accounts: {default: {credentials: {provider: aws, profile: default}}}
+#accounts:
+#  default:
+#    # account_number: '1234'
+#    credentials:
+#       # provider: aws
+#       # profile: default
+#  'dev':
+#    # account_number: '1234'  # optional
+#    credentials:
+#      # provider: aws  # default
+#      # profile: default  # default
+#  'staging':
+#    credentials:
+#      # provider: aws  # look for this profile in ~/.aws/credentials
+#      profile: staging_profile
+#  'prod':
+#    account_number: '111222333444'
+#    credentials:
+#      provider: faws
+#      default_region: us-west-2

@@ -32,7 +32,7 @@ branch of https://github.com/larsbutler/yolo.
 yolo login
 ```
 
- 1. Create a Yolo file, you can find [an example](https://github.com/rackerlabs/yolo/blob/master/example.yolo.yaml) in the code repository.
+ 1. Create a Yolo file, you can find [an example](https://github.com/rackerlabs/yolo/blob/master/yolo-example.yaml) in the code repository.
  2. Define AWS account-level resources using a CloudFormation template.
  3. Deploy the baseline infrastructure:
 

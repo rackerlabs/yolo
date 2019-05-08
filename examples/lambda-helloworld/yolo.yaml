@@ -1,0 +1,26 @@
+name: lambda-helloworld
+templates:
+  stage:
+    path: 'stage-templates'
+  account:
+    path: 'account-templates'
+services:
+  my-lambda-service:
+    type: 'lambda'
+    build:
+      working_dir: '.'
+      dist_dir: 'dist'
+      dependencies: 'requirements.txt'
+      include:
+        - 'main.py'
+    deploy:
+      lambda_function_configuration:
+        FunctionName: 'MyLambdaFunction'
+        Role: '{{ stage.outputs.LambdaExecutionRoleArn }}'
+        Handler: 'main.lambda_handler'
+        Description: 'My Lambda Function'
+        Timeout: 10
+        MemorySize: 128
+        Runtime: 'python3.6'
+        TracingConfig:
+          Mode: 'Active'

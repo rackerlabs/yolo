@@ -31,9 +31,9 @@ def wait_for_container_to_finish(container):
 
 def remove_container(container, **kwargs):
     try:
-        LOG.warning('Removing build container')
-        LOG.warning('kwargs is %s', kwargs)
+        LOG.info('Removing build container...')
         container.remove(**kwargs)
+        LOG.info('Removed build container')
     except Exception:
         # We just log an error and swallow the exception, because this happens
         # often on CircleCI.

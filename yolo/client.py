@@ -39,14 +39,19 @@ except ImportError:
 import keyring
 import tabulate
 
+import yolo.const
+import yolo.context
+import yolo.credentials.aws
+import yolo.credentials.faws
+import yolo.exceptions
+import yolo.yolo_file
+
 from yolo.cloudformation import CloudFormation
 from yolo import const
-from yolo.credentials.aws_cli import AWSCLICredentials
 import yolo.exceptions
 from yolo.exceptions import NoInfrastructureError
 from yolo.exceptions import StackDoesNotExist
 from yolo.exceptions import YoloError
-from yolo import faws_client
 from yolo.services import lambda_service
 from yolo.services import s3_service
 from yolo.utils import get_version_hash
@@ -60,7 +65,7 @@ if PY27:
     input = raw_input  # noqa
 
 logging.basicConfig(
-    level=logging.WARNING,
+    level=logging.INFO,
     format=('%(asctime)s [%(levelname)s] '
             '[%(name)s.%(funcName)s:%(lineno)d]: %(message)s'),
     datefmt='%Y-%m-%d %H:%M:%S'
@@ -88,22 +93,116 @@ class FakeYokeArgs(object):
 class YoloClient(object):
 
     def __init__(self, yolo_file=None):
-        self._yolo_file_path = yolo_file
-        self._yolo_file = None
-        self._faws_client = None
+        self.yolo_file_path = yolo_file
+        self.yolo_file = self._get_yolo_file(self.yolo_file_path)
 
-        # Credentials for accessing FAWS accounts:
-        self._rax_username = None
-        self._rax_api_key = None
+        self.creds_provider = None
+        self.context = None
 
-        # AWS CLI named profile
-        self._aws_profile_name = None
+    def _get_yolo_file(self, yolo_file_path):
+        if yolo_file_path is None:
+            # If no yolo file was specified, look for it in the current
+            # directory.
+            path = None
+            for filename in yolo.const.DEFAULT_FILENAMES:
+                full_path = os.path.abspath(
+                    os.path.join(os.getcwd(), filename)
+                )
+                if os.path.isfile(full_path):
+                    path = full_path
+                    self.yolo_file_path = path
+                    break
+            else:
+                raise Exception(
+                    'Yolo file could not be found, please specify one '
+                    'explicitly with --yolo-file or -f')
+        else:
+            path = os.path.abspath(yolo_file_path)
 
-        self._version_hash = None
+        return yolo.yolo_file.YoloFile.from_path(path)
 
-        # This will get populated when the ``yolo_file`` is read and the basic
-        # account/stage information (including stack outputs) is read.
-        self._context = None
+    def set_up_stage_context(self, stage):
+        creds_provider = self.get_creds_provider(
+            self.yolo_file, stage=stage
+        )
+        self.creds_provider = creds_provider
+        account_cfg, stage_cfg = self.get_account_stage_config(
+            self.yolo_file, stage=stage
+        )
+        account_number = creds_provider.get_aws_account_number(
+            account_cfg['account_number']
+        )
+        account_outputs = self.get_account_outputs(
+            account_cfg,
+            account_cfg['credentials']['default_region'],
+        )
+        stage_outputs = self.get_stage_outputs(
+            account_cfg,
+            account_cfg['credentials']['default_region'],
+            stage,
+        )
+        context = yolo.context.runtime_context(
+            account_name=account_cfg['name'],
+            account_number=account_number,
+            account_outputs=account_outputs,
+            stage_name=stage,
+            stage_region=stage_cfg['region'],
+            stage_outputs=stage_outputs,
+        )
+        self.context = context
+
+        self.yolo_file = self.yolo_file.render(**self.context)
+
+    def get_account_config(self, yolo_file, account):
+        acct_map = {}
+        for acct in yolo_file.accounts:
+            acct_map[acct['name']] = acct
+        return acct_map.get(
+            # Get a specific account, if one is defined in the yolo config:
+            account,
+            # Or, use the default one:
+            acct_map.get('default')
+        )
+
+    def get_stage_config(self, yolo_file, stage):
+        return yolo_file.stages.get(
+            # Get specific stage, if one is defined in the yolo config:
+            stage,
+            # Or, use the default one:
+            yolo_file.stages.get('default')
+        )
+
+    def get_account_stage_config(self, yolo_file, account=None, stage=None):
+        if stage is not None:
+            stage_cfg = self.get_stage_config(yolo_file, stage)
+            account_cfg = self.get_account_config(
+                yolo_file, stage_cfg['account']
+            )
+        else:
+            stage_cfg = None
+            # No matter what, there's always an associated account.
+            account_cfg = self.get_account_config(yolo_file, account)
+        return account_cfg, stage_cfg
+
+    def get_creds_provider(self, yolo_file, account=None, stage=None):
+        account_cfg, stage_cfg = self.get_account_stage_config(
+            yolo_file, account=account, stage=stage
+        )
+        if account_cfg['credentials']['provider'] == 'aws':
+            return yolo.credentials.aws.AWSCredentialsProvider(
+                profile_name=account_cfg['credentials']['profile']
+            )
+        elif account_cfg['credentials']['provider'] == 'faws':
+            return yolo.credentials.faws.FAWSCredentialsProvider(
+                rs_username=os.getenv(const.RACKSPACE_USERNAME),
+                rs_api_key=os.getenv(const.RACKSPACE_API_KEY),
+            )
+        else:
+            raise yolo.exception.YoloError(
+                'Unknown credentials provider "{}"'.format(
+                    account_cfg.credentials.provider
+                )
+            )
 
     @property
     def rax_username(self):
@@ -146,38 +245,6 @@ class YoloClient(object):
         # We can allow this value to be None, because in that case we'll
         # fallback to FAWS credentials.
         return self._aws_profile_name
-
-    @property
-    def context(self):
-        """Environment context for commands and template rendering."""
-        if self._context is None:
-            raise RuntimeError('Environment context is not yet loaded!')
-        else:
-            return self._context
-
-    @property
-    def yolo_file(self):
-        if self._yolo_file is None:
-            self._yolo_file = self._get_yolo_file(self._yolo_file_path)
-        return self._yolo_file
-
-    @property
-    def faws_client(self):
-        """Lazily instantiate a FAWS client."""
-        if self._faws_client is None:
-            # NOTE(szilveszter): This is just a quick hack, because I wanted
-            # to avoid refactoring everything. If this ends up being a good
-            # approach, I'm happy to do the work.
-            # If we have a profile stored, let's use it instead of going to
-            # FAWS first.
-            if self.aws_profile_name:
-                self._faws_client = AWSCLICredentials(self.aws_profile_name)
-            else:
-                self._faws_client = faws_client.FAWSClient(
-                    self.rax_username, self.rax_api_key
-                )
-
-        return self._faws_client
 
     @property
     def version_hash(self):
@@ -235,25 +302,36 @@ class YoloClient(object):
     def _get_service_client(self, service):
         service_cfg = self._get_service_cfg(service)
         service_client = SERVICE_TYPE_MAP[service_cfg['type']](
-            self.yolo_file, self.faws_client, self.context
+            self.yolo_file, self.creds_provider, self.context
             # TODO: add timeout
         )
         return service_client
 
-    def get_stage_outputs(self, account_number, region, stage):
-        cf_client = self.faws_client.aws_client(account_number, 'cloudformation', region)
+    def get_stage_outputs(self, account_cfg, region, stage):
+        cf_client = self.creds_provider.aws_client(
+            account_cfg, 'cloudformation', region_name=region,
+        )
         cf = CloudFormation(cf_client)
+        account_number = self.creds_provider.get_aws_account_number(
+            account_cfg
+        )
         stack_name = self.get_stage_stack_name(account_number, stage)
         try:
             return cf.get_stack_outputs(stack_name=stack_name)
         except StackDoesNotExist:
-            raise YoloError(
-                'Stage infrastructure stack does not exist; please run '
-                '"yolo deploy-infra --stage {}" first.'.format(stage)
+            LOG.warning(
+                'Stage infrastructure stack does not exist. You may need to '
+                'run "yolo deploy-infra --stage %s".',
+                stage,
             )
+        return {}
 
-    def get_account_outputs(self, account_number, region):
-        cf_client = self.faws_client.aws_client(account_number, 'cloudformation', region)
+    # TODO: use account config instead of account number
+    def get_account_outputs(self, account_cfg, region):
+        cf_client = self.creds_provider.aws_client(
+            account_cfg, 'cloudformation', region_name=region,
+        )
+        account_number = self.creds_provider.get_aws_account_number(account_cfg)
         cf = CloudFormation(cf_client)
         stack_name = self.get_account_stack_name(account_number)
         # Full account-level data might not be available, when the baseline
@@ -262,11 +340,12 @@ class YoloClient(object):
         try:
             return cf.get_stack_outputs(stack_name=stack_name)
         except StackDoesNotExist:
-            LOG.info(
-                'Account-level stack does not exist yet for account %s,',
-                account_number
+            LOG.warning(
+                'Account-level infrastructure stack does not exist. You may '
+                'need to run "yolo deploy-infra --account %s".',
+                account_number,
             )
-            return {}
+        return {}
 
     def _get_metadata(self):
         return {
@@ -302,7 +381,7 @@ class YoloClient(object):
             if 'account' in self.yolo_file.templates:
                 # get account stack outputs
                 account_stack_outputs = self.get_account_outputs(
-                    account_cfg.account_number,
+                    account_cfg,
                     account_cfg.default_region,
                 )
             else:
@@ -337,7 +416,7 @@ class YoloClient(object):
 
                 # get account stack outputs
                 account_stack_outputs = self.get_account_outputs(
-                    account_cfg.account_number,
+                    account_cfg,
                     account_cfg.default_region,
                 )
                 account_context = utils.DottedDict(
@@ -356,48 +435,6 @@ class YoloClient(object):
             account_number,
             stage,
         )
-
-    def get_aws_account_credentials(self, account_number):
-        creds = self.faws_client.get_aws_account_credentials(account_number)
-        cred = creds['credential']
-        cred_vars = dict(
-            AWS_ACCESS_KEY_ID=cred['accessKeyId'],
-            AWS_SECRET_ACCESS_KEY=cred['secretAccessKey'],
-            AWS_SESSION_TOKEN=cred['sessionToken'],
-        )
-        return cred_vars
-
-    def _setup_aws_credentials_in_environment(self, acct_num, region):
-        os.environ['AWS_DEFAULT_REGION'] = region
-        aws_session = self.faws_client.boto3_session(acct_num)
-        credentials = aws_session.get_credentials()
-        os.environ['AWS_ACCESS_KEY_ID'] = credentials.access_key
-        os.environ['AWS_SECRET_ACCESS_KEY'] = credentials.secret_key
-        if credentials.token:
-            os.environ['AWS_SESSION_TOKEN'] = credentials.token
-
-    def _get_yolo_file(self, yolo_file):
-        if yolo_file is None:
-            # If no yolo file was specified, look for it in the current
-            # directory.
-            config_path = None
-            for filename in const.DEFAULT_FILENAMES:
-                full_path = os.path.abspath(
-                    os.path.join(os.getcwd(), filename)
-                )
-                if os.path.isfile(full_path):
-                    config_path = full_path
-                    break
-            else:
-                raise Exception(
-                    'Yolo file could not be found, please specify one '
-                    'explicitly with --yolo-file or -f')
-        else:
-            config_path = os.path.abspath(yolo_file)
-
-        self._yolo_file_path = config_path
-        yf = YoloFile.from_path(self._yolo_file_path)
-        return yf
 
     def _stages_accounts_regions(self, yf, stage):
         # If stage specific, show only status for that stage
@@ -421,18 +458,18 @@ class YoloClient(object):
         # No stage specified; show status for all stages
         else:
             stgs_accts_regions = set([
-                (stg_name, stg['account'], stg['region'])
+                (stg_name, stg.get('account'), stg['region'])
                 for stg_name, stg in yf.stages.items()
             ])
         return stgs_accts_regions
 
-    def _ensure_bucket(self, acct_num, region, bucket_name):
+    def _ensure_bucket(self, account_cfg, region, bucket_name):
         """Make sure an S3 bucket exists in the specified account/region.
 
         If it doesn't exist, create it.
 
-        :param str acct_num:
-            AWS account number.
+        :param dict account_cfg:
+            Target account config read from the yolo config file.
         :param str region:
             AWS region in which to create the bucket (e.g., us-east-1,
             eu-west-1, etc.).
@@ -442,8 +479,8 @@ class YoloClient(object):
         :returns:
             :class:`boto3.resources.factory.s3.Bucket` instance.
         """
-        s3_client = self.faws_client.aws_client(
-            acct_num, 's3', region_name=region
+        s3_client = self.creds_provider.aws_client(
+            account_cfg, 's3', region_name=region
         )
         try:
             print('checking for bucket {}...'.format(bucket_name))
@@ -465,7 +502,9 @@ class YoloClient(object):
                         'LocationConstraint': region
                     }
                 s3_client.create_bucket(**create_bucket_kwargs)
-        s3 = self.faws_client.boto3_session(acct_num).resource('s3', region_name=region)
+        s3 = self.creds_provider.aws_resource(
+            account_cfg, 's3', region_name=region
+        )
         bucket = s3.Bucket(bucket_name)
         return bucket
 
@@ -834,19 +873,6 @@ class YoloClient(object):
             const.NAMESPACE, 'aws_profile_name', self.aws_profile_name
         )
 
-    def list_accounts(self):
-        accounts = self.faws_client.list_aws_accounts()
-        headers = ['Account Number', 'Name', 'Service Level']
-        aws_accounts = accounts['awsAccounts']
-        table = [headers]
-        for aws_account in aws_accounts:
-            table.append([
-                aws_account['awsAccountNumber'],
-                aws_account['name'],
-                const.ACCT_SVC_LVL_MAPPING[aws_account['serviceLevelId']],
-            ])
-        print(tabulate.tabulate(table, headers='firstrow'))
-
     def deploy_infra(self, stage=None, account=None, dry_run=False,
                      asynchronous=False, recreate=False):
         """Deploy infrastructure for an account or stage.
@@ -876,6 +902,7 @@ class YoloClient(object):
             If ``true``, tear down and re-create the stack from scratch.
             Otherwise, just try to update the existing stack.
         """
+        # 1. Command-specific validation/logic:
         with_stage = stage is not None
         with_account = account is not None
 
@@ -894,8 +921,45 @@ class YoloClient(object):
             if 'account' not in self.yolo_file.templates:
                 raise YoloError('No "account" templates are defined.')
 
-        self.set_up_yolofile_context(stage=stage, account=account)
-        self._yolo_file = self.yolo_file.render(**self.context)
+        # 2. Figure out the credentials provider to use:
+        creds_provider = self.get_creds_provider(
+            self.yolo_file, account=account, stage=stage
+        )
+        self.creds_provider = creds_provider
+
+        # 3. Set up runtime context for rendering context variables in the yolo
+        #    file:
+        account_cfg, stage_cfg = self.get_account_stage_config(
+            self.yolo_file, stage=stage, account=account
+        )
+        account_number = creds_provider.get_aws_account_number(account_cfg)
+        account_outputs = {}
+
+        if stage is not None:
+            # Only with the stage may we load account stack outputs:
+            account_outputs = self.get_account_outputs(
+                account_cfg,
+                account_cfg['credentials']['default_region'],
+            )
+            stage_region = stage_cfg['region'] if stage_cfg is not None else None
+        else:
+            account_outputs = {}
+            stage_region = None
+        context = yolo.context.runtime_context(
+            account_name=account,
+            account_number=account_number,
+            account_outputs=account_outputs,
+            account_region=account_cfg['credentials']['default_region'],
+            stage_name=stage,
+            stage_region=stage_region,
+            # We don't populate stage outputs here, because those come from the
+            # stack--and that's what we're deploying here.
+            stage_outputs=None,
+        )
+        self.context = context
+
+        # 4. Render the file yolo file:
+        self.yolo_file = self.yolo_file.render(**context)
 
         if stage is not None:
             # Deploy stage-level templates
@@ -1045,7 +1109,7 @@ class YoloClient(object):
             tags.append(const.YOLO_STACK_TAGS['protected'])
 
         bucket = self._ensure_bucket(
-            self.context.account.account_number,
+            self.context.account,
             region,
             self.app_bucket_name,
         )
@@ -1054,10 +1118,10 @@ class YoloClient(object):
             full_templates_dir = templates_path
         else:
             # Template dir is relative to the location of the yolo.yaml file.
-            working_dir = os.path.dirname(self._yolo_file_path)
-            full_templates_dir = os.path.join(
+            working_dir = os.path.dirname(self.yolo_file_path)
+            full_templates_dir = os.path.abspath(os.path.join(
                 working_dir, templates_path
-            )
+            ))
 
         files = os.listdir(full_templates_dir)
         # filter out yaml/json files
@@ -1067,15 +1131,16 @@ class YoloClient(object):
                 f.endswith('yml') or
                 f.endswith('json'))
         ]
-        [master_template_file] = [
-            f for f in cf_files
-            if f.startswith('master.')
-        ]
-        # If there were no template files found, let's stop here with a friendly
-        # error message.
-        if len(cf_files) == 0:
-            print('No CloudFormation template files found.')
-            return
+        master_template_file = None
+        for f in cf_files:
+            if f.startswith('master.'):
+                master_template_file = f
+                break
+        else:
+            raise YoloError(
+                'No CloudFormation template files found in directory '
+                '{directory}'.format(directory=full_templates_dir)
+            )
 
         for cf_file in cf_files:
             cf_file_full_path = os.path.join(full_templates_dir, cf_file)
@@ -1087,8 +1152,8 @@ class YoloClient(object):
                 ExtraArgs=const.S3_UPLOAD_EXTRA_ARGS,
             )
 
-        cf_client = self.faws_client.aws_client(
-            self.context.account.account_number,
+        cf_client = self.creds_provider.aws_client(
+            self.context.account,
             'cloudformation',
             region_name=region,
         )
@@ -1117,8 +1182,18 @@ class YoloClient(object):
             raise YoloError(str(err))
 
     def status(self, stage=None):
-        self.set_up_yolofile_context()
-        self._yolo_file = self.yolo_file.render(**self.context)
+        creds_provider = self.get_creds_provider(self.yolo_file, stage=stage)
+        context = yolo.context.runtime_context(
+            # TODO: what about a default account name? 'default'?
+            account_name=None,
+            account_number=creds_provider.get_aws_account_number(None),
+            account_outputs=None,
+            stage_name=stage,
+            stage_region=None,
+            stage_outputs=None,
+        )
+        self.context = context
+        self.yolo_file = self.yolo_file.render(**context)
 
         # else, show status for all stages
         headers = ['StackName', 'Description', 'StackStatus']
@@ -1129,9 +1204,8 @@ class YoloClient(object):
         stack_names = set()
 
         for stg_name, account, region in stgs_accts_regions:
-            aws_account = self.yolo_file.normalize_account(account)
-            cf_client = self.faws_client.aws_client(
-                aws_account.account_number, 'cloudformation', region_name=region
+            cf_client = creds_provider.aws_client(
+                self.context.account, 'cloudformation', region_name=region
             )
             if stg_name == YoloFile.DEFAULT_STAGE:
                 stacks_paginator = cf_client.get_paginator('list_stacks')
@@ -1153,7 +1227,7 @@ class YoloClient(object):
                 # stack.
                 stack_name = '{}-{}-{}'.format(
                     self.yolo_file.app_name,
-                    aws_account.account_number,
+                    creds_provider.get_aws_account_number(account),
                     stg_name,
                 )
                 try:
@@ -1193,11 +1267,12 @@ class YoloClient(object):
             build_log = open(build_log_path, 'a')
 
         try:
-            self.set_up_yolofile_context(stage=stage)
-            self._yolo_file = self.yolo_file.render(**self.context)
+            # TODO(larsbutler, 11-Jul-2018): Put this whole try block in a
+            # separate method.
+            self.set_up_stage_context(stage)
 
             lambda_svc = lambda_service.LambdaService(
-                self.yolo_file, self.faws_client, self.context
+                self.yolo_file, self.creds_provider, self.context
             )
             lambda_svc.build(service, stage, build_log)
         finally:
@@ -1207,26 +1282,24 @@ class YoloClient(object):
         # TODO(larsbutler): Make the "version" a parameter, so the user
         # can explicitly specify it on the command line. Could be useful
         # for releases and the like.
-        self.set_up_yolofile_context(stage=stage)
-        self._yolo_file = self.yolo_file.render(**self.context)
+        self.set_up_stage_context(stage)
 
         service_client = self._get_service_client(service)
 
         bucket = self._ensure_bucket(
-            self.context.account.account_number,
+            self.context.account,
             self.context.stage.region,
             self.app_bucket_name,
         )
         service_client.push(service, stage, bucket)
 
     def list_builds(self, service, stage):
-        self.set_up_yolofile_context(stage=stage)
-        self._yolo_file = self.yolo_file.render(**self.context)
+        self.set_up_stage_context(stage)
 
         service_client = self._get_service_client(service)
 
         bucket = self._ensure_bucket(
-            self.context.account.account_number,
+            self.context.account,
             self.context.stage.region,
             self.app_bucket_name
         )
@@ -1244,14 +1317,13 @@ class YoloClient(object):
                 ' but not both.'
             )
 
-        self.set_up_yolofile_context(stage=stage)
-        self._yolo_file = self.yolo_file.render(**self.context)
+        self.set_up_stage_context(stage)
 
         # TODO(larsbutler): Check if service is actually
         # lambda/lambda-apigateway. If it isn't, throw an error.
 
         bucket = self._ensure_bucket(
-            self.context.account.account_number,
+            self.context.account,
             self.context.stage.region,
             self.app_bucket_name,
         )
@@ -1259,7 +1331,7 @@ class YoloClient(object):
         if timeout is None:
             timeout = lambda_service.LambdaService.DEFAULT_TIMEOUT
         lambda_svc = lambda_service.LambdaService(
-            self.yolo_file, self.faws_client, self.context, timeout
+            self.yolo_file, self.creds_provider, self.context, timeout
         )
         if from_local:
             lambda_svc.deploy_local_version(service, stage)
@@ -1267,30 +1339,32 @@ class YoloClient(object):
             lambda_svc.deploy(service, stage, version, bucket)
 
     def deploy_s3(self, stage, service, version):
-        self.set_up_yolofile_context(stage=stage)
-        self._yolo_file = self.yolo_file.render(**self.context)
+        self.set_up_stage_context(stage)
 
         # Builds bucket:
         bucket = self._ensure_bucket(
-            self.context.account.account_number,
+            self.context.account,
             self.context.stage.region,
             self.app_bucket_name,
         )
 
         s3_svc = s3_service.S3Service(
-            self.yolo_file, self.faws_client, self.context
+            self.yolo_file, self.creds_provider, self.context
         )
         s3_svc.deploy(service, stage, version, bucket)
 
     def shell(self, stage):
-        self.set_up_yolofile_context(stage=stage)
-        self._yolo_file = self.yolo_file.render(**self.context)
+        self.set_up_stage_context(stage)
 
-        # Set up AWS credentials for the shell
-        self._setup_aws_credentials_in_environment(
-            self.context.account.account_number,
-            self.context.stage.region,
+        # Set up the AWS credentials in the environment:
+        creds = self.creds_provider.get_aws_account_credentials(
+            aws_account_number=self.context.account.account_number
         )
+        os.environ['AWS_DEFAULT_REGION'] = self.context.stage.region
+        os.environ['AWS_ACCESS_KEY_ID'] = creds.aws_access_key_id
+        os.environ['AWS_SECRET_ACCESS_KEY'] = creds.aws_secret_access_key
+        if creds.aws_session_token is not None:
+            os.environ['AWS_SESSION_TOKEN'] = creds.aws_session_token
 
         # Select Python shell
         if have_bpython:
@@ -1358,16 +1432,14 @@ class YoloClient(object):
         :returns:
             `dict` of param name/param value key/value pairs.
         """
-        self._get_service_cfg(service)
-        self.set_up_yolofile_context(stage=stage)
-        self._yolo_file = self.yolo_file.render(**self.context)
+        self.set_up_stage_context(stage)
 
         params = {}
 
-        ssm_client = self.faws_client.aws_client(
-            self.context.account.account_number,
+        ssm_client = self.creds_provider.aws_client(
+            self.context.account,
             'ssm',
-            self.context.stage.region,
+            region_name=self.context.stage.region,
         )
         param_path = '/{service}/{stage}/latest/'.format(
             service=service, stage=stage
@@ -1402,11 +1474,16 @@ class YoloClient(object):
         if param is None:
             param = tuple()
 
-        self.set_up_yolofile_context(stage=stage)
-        self._yolo_file = self.yolo_file.render(**self.context)
+        self.set_up_stage_context(stage)
 
         service_cfg = self._get_service_cfg(service)
         # Get the default parameters first, if available.
+
+        if 'parameters' not in service_cfg['deploy']:
+            # No parameters are configured for this service.
+            print('No parameters are configured for this service.')
+            return
+
         parameters = service_cfg['deploy']['parameters']['stages'].get(
             'default', []
         )
@@ -1443,10 +1520,10 @@ class YoloClient(object):
             parameters = [x for x in parameters if x['name'] in param]
 
         # get ssm client
-        ssm_client = self.faws_client.aws_client(
-            self.context.account.account_number,
+        ssm_client = self.creds_provider.aws_client(
+            self.context.account,
             'ssm',
-            self.context.stage.region,
+            region_name=self.context.stage.region,
         )
 
         # Precedence for setting params:
@@ -1518,6 +1595,12 @@ class YoloClient(object):
 
         # Get the parameter names that are defined in the yolo file:
         service_cfg = self.yolo_file.services[service]
+
+        if 'parameters' not in service_cfg['deploy']:
+            # No parameters are configured for this service.
+            print('No parameters are configured for this service.')
+            return
+
         parameters_cfg = service_cfg['deploy']['parameters']['stages'].get(
             stage,
             service_cfg['deploy']['parameters']['stages']['default']
@@ -1542,11 +1625,9 @@ class YoloClient(object):
             print('All required parameters are stored in SSM')
 
     def show_service(self, service, stage):
-        self.set_up_yolofile_context(stage=stage)
-        self._yolo_file = self.yolo_file.render(**self.context)
-
+        self.set_up_stage_context(stage)
         lambda_svc = lambda_service.LambdaService(
-            self.yolo_file, self.faws_client, self.context
+            self.yolo_file, self.creds_provider, self.context
         )
         lambda_svc.show(service, stage)
 
@@ -1560,17 +1641,70 @@ class YoloClient(object):
             raise YoloError('You must specify either --stage or --account (but'
                             ' not both).')
 
-        self.set_up_yolofile_context(stage=stage, account=account)
+        creds_provider = self.get_creds_provider(
+            self.yolo_file, account=account, stage=stage
+        )
+        self.creds_provider = creds_provider
+        account_cfg, stage_cfg = self.get_account_stage_config(
+            self.yolo_file, stage=stage, account=account
+        )
+        account_number = creds_provider.get_aws_account_number(account)
+
+        if stage is not None:
+            stage_region = stage_cfg.region if stage_cfg is not None else None
+        else:
+            stage_region = None
+
+        context = yolo.context.runtime_context(
+            account_name=account,
+            account_number=account_number,
+            account_region=account_cfg.credentials.default_region,
+            stage_name=stage,
+            stage_region=stage_region,
+            # We don't populate stage or account outputs here, because that's
+            # what we're outputting in this command!
+            account_outputs=None,
+            stage_outputs=None,
+        )
+        self.context = context
+
+        self.yolo_file = self.yolo_file.render(**context)
 
         if with_stage:
+            region = stage_cfg.region
+        elif with_account:
+            region = account_cfg.credentials.default_region
+
+        cf_client = self.creds_provider.aws_client(
+            account_cfg, 'cloudformation', region_name=region,
+        )
+        cf = CloudFormation(cf_client)
+
+        if with_stage:
+            stack_name = self.get_stage_stack_name(account_number, stage)
+            stack_exists, _ = cf.stack_exists(stack_name)
+            if not stack_exists:
+                raise YoloError(
+                    'Stage infrastructure stack does not exist; please run '
+                    '"yolo deploy-infra --stage {}" first.'.format(stage)
+                )
+
             outputs = self.get_stage_outputs(
-                self.context.account.account_number,
+                self.context.account,
                 self.context.stage.region,
                 stage,
             )
         elif with_account:
+            stack_name = self.get_account_stack_name(account_number)
+            stack_exists, _ = cf.stack_exists(stack_name)
+            if not stack_exists:
+                raise YoloError(
+                    'Account infrastructure stack does not exist; please run '
+                    '"yolo deploy-infra --account {}" first.'.format(account)
+                )
+
             outputs = self.get_account_outputs(
-                self.context.account.account_number,
+                account_cfg,
                 self.context.account.default_region,
             )
 

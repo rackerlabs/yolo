@@ -2,10 +2,12 @@ awscli
 boto3
 click
 docker==3.4.0
+dotted-dict
 jinja2
 keyring==8.7.0
 keyrings.alt
 pyyaml
+ruamel.yaml
 requests
 ruamel.yaml
 # tabulate
