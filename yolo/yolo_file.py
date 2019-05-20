@@ -106,6 +106,7 @@ class YoloFile(object):
         volup.Optional('TracingConfig'): {
             volup.Required('Mode'): volup.Any('Active', 'PassThrough'),
         },
+        volup.Optional('Layers'): [str],
     })
     YOKE_SCHEMA = volup.Schema({
         # value is a dictionary of strings or dicts, keyed by strings
