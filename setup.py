@@ -37,10 +37,10 @@ def get_version():
 VERSION = get_version()
 
 config = dict(
-    name='yolo',
+    name='yolo-extension',
     version=VERSION,
-    maintainer='Lars Butler',
-    maintainer_email='lars.butler@rackspace.com',
+    maintainer='Akshaya PS',
+    maintainer_email='akshaya.ps@rackspace.com',
     url='',
     description=(
         'Manage AWS infrastructure and microservices across multiple '
@@ -70,8 +70,8 @@ config = dict(
         'Intended Audience :: Information Technology',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 2.7',
-        'Programming Language :: Python :: 3.4',
         'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.8',
         'Topic :: Software Development :: Build Tools',
     ],
 )

@@ -3,7 +3,7 @@ jobs:
   build:
     working_directory: ~/yolo
     docker:
-      - image: circleci/python:3.6.1
+      - image: cimg/python:3.8.13
     steps:
       - checkout
 

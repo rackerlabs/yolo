@@ -1,5 +1,10 @@
 # Changes
 
+## 0.3.7 (15-Jun-2022)
+
+- Support added for python 3.8 runtime
+- Handles resource conflicts for AWS function updates
+
 ## 0.3.2 (17-Aug-2018)
 
 - API Gateway: Support AWS proxy integration

@@ -25,7 +25,7 @@ RUN touch /dependencies/requirements.txt
 
 ENV CFLAGS="-I/openssl/include -I/libffi/lib/libffi-${LIBFFI_VERSION}/include"
 ENV LDFLAGS="-L/openssl/lib -L/libffi/lib64"
-ENV LD_LIBRARY_PATH="/libffi/lib64"
+ENV LD_LIBRARY_PATH="/libffi/lib64:/usr/local/lib/"
 
 # Directory for built wheels
 RUN mkdir /build_cache
@@ -95,7 +95,7 @@ RUN curl -L -o libffi-${LIBFFI_VERSION}.tar.gz https://github.com/libffi/libffi/
 CMD PYBIN="/opt/python/${PY_VERSION}/bin" && \
     set -ex && \
     if [[ -n "$EXTRA_PACKAGES" ]]; then yum install -y ${EXTRA_PACKAGES} ; else echo "no extra pkgs to install"; fi && \
-    ${PYBIN}/pip install -U setuptools && \
+    ${PYBIN}/pip install -U setuptools==45 && \
     if [[ -n "$REBUILD_DEPENDENCIES" ]]; then \
         echo "rebuilding dependencies"; \
         ${PYBIN}/pip wheel --no-binary :all: -w /build_cache -r \

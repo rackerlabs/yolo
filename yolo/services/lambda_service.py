@@ -32,12 +32,13 @@ from yolo import yolo_file
 
 LOG = logging.getLogger(__name__)
 
-# On docker hub: https://hub.docker.com/r/larsbutler/yolo/
-BUILD_IMAGE = 'larsbutler/yolo:python'
+# On docker hub: https://hub.docker.com/repository/docker/akshaps/yolo
+BUILD_IMAGE = 'akshaps/yolo:latest'
 PYTHON_VERSION_MAP = {
     # cp27-mu is compiled with ucs4 support which is the same as Lambda
     'python2.7': 'cp27-cp27mu',
     'python3.6': 'cp36-cp36m',
+    'python3.8': 'cp38-cp38'
 }
 
 
@@ -53,6 +54,15 @@ class LambdaService(yolo.services.BaseService):
         # YoloFile object which is loaded when dealing with a remote build
         # (which contains a snapshot of a yolo.yaml file).
         self.build_yolo_file = None
+
+    def wait_until_lambda_function_is_updated(self, lambda_client, function_name):
+        """
+        Wait until lambda LastUpdateStatus=Successful
+        """
+        # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/lambda.html#waiters
+        waiter = lambda_client.get_waiter("function_updated")
+        print("Waiting for lambda function {0} to be updated...".format(function_name))
+        waiter.wait(FunctionName=function_name)
 
     def build(self, service, stage, build_log):
         """Create build artifacts for a Lambda-based service.
@@ -594,6 +604,7 @@ class LambdaService(yolo.services.BaseService):
                 FunctionName=lambda_fn_cfg['FunctionName'],
                 **code_config
             )
+            self.wait_until_lambda_function_is_updated(lambda_client, lambda_fn_cfg['FunctionName'])
             lambda_client.update_function_configuration(
                 **lambda_fn_cfg
             )
@@ -605,6 +616,7 @@ class LambdaService(yolo.services.BaseService):
             # operations. We can update the code and publish it as an atomic
             # operation, but then we can't update the config (it can only be
             # updated for the $LATEST version).
+            self.wait_until_lambda_function_is_updated(lambda_client, lambda_fn_cfg['FunctionName'])
             fn_version = lambda_client.publish_version(
                 FunctionName=lambda_fn_cfg['FunctionName'],
             )['Version']
